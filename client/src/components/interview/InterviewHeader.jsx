@@ -1,8 +1,12 @@
 function InterviewHeader() {
+  function handleLogoClick() {
+    window.location.hash = '/'
+  }
+
   return (
     <header className="interview-header">
       <div className="header-left">
-        <span className="logo">IntervueAI</span>
+        <span onClick={handleLogoClick} className="logo">IntervueAI</span>
         <div className="header-divider" />
         <div className="time-left">
           <span className="material-symbols-outlined">schedule</span>

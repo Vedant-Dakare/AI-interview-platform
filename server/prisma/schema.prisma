@@ -8,6 +8,17 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+enum CandidateRole {
+  backend
+  ml
+  dsa
+}
+
+enum InviteStatus {
+  pending
+  completed
+}
+
 model User {
   id         Int         @id @default(autoincrement())
   name       String
@@ -71,4 +82,26 @@ model Answer {
   updatedAt  DateTime @updatedAt
 
   question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+}
+
+model InterviewInvite {
+  id                 Int           @id @default(autoincrement())
+  candidateId        String        @unique @map("candidate_id")
+  email              String
+  role               CandidateRole
+  interviewTokenHash String?       @unique @map("interview_token_hash")
+  tokenExpiry        DateTime      @map("token_expiry")
+  status             InviteStatus  @default(pending)
+  resumeInsights     String?       @map("resume_insights")
+  questionPlan       Json?         @map("question_plan")
+  startedAt          DateTime?     @map("started_at")
+  completedAt        DateTime?     @map("completed_at")
+  emailSentAt        DateTime?     @map("email_sent_at")
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+
+  @@index([email])
+  @@index([status])
+  @@index([tokenExpiry])
+  @@map("interview_invites")
 }

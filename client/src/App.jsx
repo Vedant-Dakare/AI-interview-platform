@@ -12,6 +12,10 @@ function getRoute() {
     return 'interview'
   }
 
+  if (hash.startsWith('#/interview/')) {
+    return 'interview'
+  }
+
   if (hash === '#/login') {
     return 'login'
   }

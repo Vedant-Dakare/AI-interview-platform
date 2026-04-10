@@ -9,7 +9,7 @@ function LandingPage({ onOpenInterview, onOpenLogin }) {
     <div className="landing-page">
       <TopNavBar onGetDemo={onOpenInterview} onSignIn={onOpenLogin} />
       <main>
-        <HeroSection />
+        <HeroSection onStartInterview={onOpenInterview} />
         <FeaturesSection />
         <CtaSection onViewDemo={onOpenInterview} />
       </main>

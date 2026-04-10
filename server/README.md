@@ -66,6 +66,13 @@ backend/
 - `MAX_FILE_SIZE_MB` max resume PDF size
 - `CORS_ORIGIN` comma-separated allowed origins (example: `http://localhost:5173`)
 - `AUTH_RATE_LIMIT_MAX` max auth requests per 15 minutes per IP
+- `INTERVIEW_ADMIN_API_KEY` internal secret for creating and emailing interview links
+- `PUBLIC_APP_URL` base URL used to build interview links in emails
+- `MAIL_FROM` sender email for interview invites
+- `SMTP_HOST` SMTP host for outbound mail
+- `SMTP_PORT` SMTP port (587 or 465)
+- `SMTP_USER` SMTP account username
+- `SMTP_PASS` SMTP account password
 
 ## API Endpoints
 
@@ -101,6 +108,29 @@ backend/
   - auth: Bearer token required
 - `POST /api/interview/:id/end`
   - auth: Bearer token required
+
+### Secure Interview Links
+
+- `POST /api/interview-links`
+  - headers: `x-admin-api-key: <INTERVIEW_ADMIN_API_KEY>`
+  - body: `{ "email": "candidate@company.com", "role": "backend|ml|dsa", "resumeInsights": "...", "sendEmail": true }`
+  - generates secure token, stores hash, and sets 24h expiry
+
+- `POST /api/interview-links/:candidateId/send-email`
+  - headers: `x-admin-api-key: <INTERVIEW_ADMIN_API_KEY>`
+  - rotates token and emails a new link
+
+- `GET /api/interview-links/validate/:token`
+  - auth: Bearer token required
+  - verifies token exists, is not expired, and interview is not completed
+
+- `POST /api/interview-links/start/:token`
+  - auth: Bearer token required
+  - returns candidate-specific context such as role, resume insights, and question plan
+
+- `POST /api/interview-links/complete/:token`
+  - auth: Bearer token required
+  - marks interview as completed and blocks token reuse
 
 ## Notes
 

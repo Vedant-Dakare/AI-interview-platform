@@ -1,4 +1,4 @@
-function HeroSection() {
+function HeroSection({ onStartInterview }) {
   return (
     <section className="hero-section">
       <div className="hero-bg-orb hero-bg-orb-one" />
@@ -24,7 +24,7 @@ function HeroSection() {
           </p>
 
           <div className="hero-actions">
-            <button type="button" className="btn-hero-primary">
+            <button onClick={onStartInterview} type="button" className="btn-hero-primary">
               Start Interview
               <span className="material-symbols-outlined">arrow_forward</span>
             </button>

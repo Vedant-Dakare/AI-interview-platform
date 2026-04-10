@@ -8,6 +8,7 @@ import rateLimit from 'express-rate-limit'
 import helmet from 'helmet'
 import authRoutes from './routes/authRoutes.js'
 import interviewRoutes from './routes/interviewRoutes.js'
+import interviewLinkRoutes from './routes/interviewLinkRoutes.js'
 import resumeRoutes from './routes/resumeRoutes.js'
 import { errorHandler, notFound } from './middleware/errorMiddleware.js'
 import prisma from './prisma/client.js'
@@ -49,6 +50,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authLimiter, authRoutes)
 app.use('/api/resume', resumeRoutes)
 app.use('/api/interview', interviewRoutes)
+app.use('/api/interview-links', interviewLinkRoutes)
 
 app.use(notFound)
 app.use(errorHandler)
