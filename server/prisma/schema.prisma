@@ -1,0 +1,74 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id         Int         @id @default(autoincrement())
+  name       String
+  email      String      @unique
+  password   String
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  resumes    Resume[]
+  interviews Interview[]
+}
+
+model Resume {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  fileUrl       String
+  extractedText String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Interview {
+  id                   Int        @id @default(autoincrement())
+  userId               Int
+  role                 String
+  currentQuestionIndex Int        @default(0)
+  status               String     @default("started")
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+  questions            Question[]
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+}
+
+model Question {
+  id           Int      @id @default(autoincrement())
+  interviewId  Int
+  questionText String
+  orderIndex   Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  answer       Answer?
+
+  interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+
+  @@unique([interviewId, orderIndex])
+  @@index([interviewId])
+}
+
+model Answer {
+  id         Int      @id @default(autoincrement())
+  questionId Int      @unique
+  answerText String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+}
