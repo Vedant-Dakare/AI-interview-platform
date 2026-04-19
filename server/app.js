@@ -7,6 +7,7 @@ import express from 'express'
 import rateLimit from 'express-rate-limit'
 import helmet from 'helmet'
 import authRoutes from './routes/authRoutes.js'
+import applicationRoutes from './routes/applicationRoutes.js'
 import interviewRoutes from './routes/interviewRoutes.js'
 import interviewLinkRoutes from './routes/interviewLinkRoutes.js'
 import resumeRoutes from './routes/resumeRoutes.js'
@@ -48,6 +49,7 @@ app.get('/api/health', (req, res) => {
 })
 
 app.use('/api/auth', authLimiter, authRoutes)
+app.use('/api/apply', applicationRoutes)
 app.use('/api/resume', resumeRoutes)
 app.use('/api/interview', interviewRoutes)
 app.use('/api/interview-links', interviewLinkRoutes)

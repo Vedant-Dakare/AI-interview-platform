@@ -121,6 +121,11 @@ body {
   line-height: 1.7;
 }
 
+.precheck-role-note {
+  margin-top: 10px !important;
+  color: var(--tertiary);
+}
+
 .precheck-list {
   margin: 24px 0 0;
   padding: 0;
@@ -479,6 +484,99 @@ body {
   align-items: center;
   justify-content: center;
   gap: 24px;
+  flex-direction: column;
+}
+
+.answer-input-section,
+.answer-submitted-section {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.answer-textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 16px;
+  border: 1px solid rgb(70 69 85 / 30%);
+  border-radius: 12px;
+  background: rgb(16 16 18 / 60%);
+  color: var(--on-surface);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.95rem;
+  resize: none;
+}
+
+.answer-textarea::placeholder {
+  color: var(--on-surface-variant);
+}
+
+.answer-textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgb(79 70 229 / 15%);
+}
+
+.answer-textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.answer-error {
+  color: var(--error);
+  font-size: 0.85rem;
+  padding: 8px 12px;
+  background: rgb(147 0 10 / 15%);
+  border-radius: 8px;
+  border-left: 3px solid var(--error);
+}
+
+.submit-answer-btn,
+.next-question-btn {
+  padding: 12px 20px;
+  border: 0;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: var(--on-primary);
+  background: linear-gradient(135deg, var(--primary-container), var(--primary));
+}
+
+.submit-answer-btn:hover:not(:disabled),
+.next-question-btn:hover:not(:disabled) {
+  box-shadow: 0 12px 32px rgb(79 70 229 / 30%);
+  transform: translateY(-2px);
+}
+
+.submit-answer-btn:disabled,
+.next-question-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.submitted-message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 16px;
+  text-align: center;
+}
+
+.submitted-message .material-symbols-outlined {
+  color: #4ade80;
+  font-size: 1.5rem;
+}
+
+.submitted-message p {
+  margin: 0;
+  color: #4ade80;
+  font-weight: 600;
 }
 
 .live-waveform-large {

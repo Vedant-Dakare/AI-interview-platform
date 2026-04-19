@@ -4,14 +4,14 @@ import FeaturesSection from './FeaturesSection'
 import CtaSection from './CtaSection'
 import SiteFooter from './SiteFooter'
 
-function LandingPage({ onOpenInterview, onOpenLogin }) {
+function LandingPage({ onOpenInterview, onOpenLogin, onOpenApply }) {
   return (
     <div className="landing-page">
       <TopNavBar onGetDemo={onOpenInterview} onSignIn={onOpenLogin} />
       <main>
         <HeroSection onStartInterview={onOpenInterview} />
         <FeaturesSection />
-        <CtaSection onViewDemo={onOpenInterview} />
+        <CtaSection onViewDemo={onOpenInterview} onRequestAccess={onOpenApply} />
       </main>
       <SiteFooter />
     </div>

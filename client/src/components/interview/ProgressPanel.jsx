@@ -1,58 +1,53 @@
-const steps = [
-  { id: 'check-1', title: 'Introduction', status: 'Completed', state: 'done' },
-  { id: 'check-2', title: 'Background & Skills', status: 'Completed', state: 'done' },
-  {
-    id: '03',
-    title: 'Scenario Analysis',
-    status: 'Current Question',
-    state: 'active',
-  },
-  { id: '04', title: 'Technical Deep Dive', state: 'future' },
-  { id: '05', title: 'Conclusion', state: 'future' },
-]
+function ProgressPanel({ currentQuestionIndex, totalQuestions }) {
+  // Generate dynamic progress steps
+  const steps = Array.from({ length: totalQuestions }, (_, i) => ({
+    id: i + 1,
+    title: `Question ${i + 1}`,
+    state: i < currentQuestionIndex ? 'done' : i === currentQuestionIndex ? 'active' : 'future',
+    status: i < currentQuestionIndex ? 'Completed' : i === currentQuestionIndex ? 'Current Question' : 'Upcoming',
+  }))
 
-function ProgressStep({ step }) {
-  if (step.state === 'done') {
-    return (
-      <div className="progress-step done">
-        <div className="step-dot done-dot">
-          <span className="material-symbols-outlined">check</span>
+  function ProgressStep({ step }) {
+    if (step.state === 'done') {
+      return (
+        <div className="progress-step done">
+          <div className="step-dot done-dot">
+            <span className="material-symbols-outlined">check</span>
+          </div>
+          <div className="step-content">
+            <p className="step-title">{step.title}</p>
+            <p className="step-subtitle">{step.status}</p>
+          </div>
         </div>
-        <div className="step-content">
-          <p className="step-title">{step.title}</p>
-          <p className="step-subtitle">{step.status}</p>
-        </div>
-      </div>
-    )
-  }
+      )
+    }
 
-  if (step.state === 'active') {
+    if (step.state === 'active') {
+      return (
+        <div className="progress-step active">
+          <div className="step-dot active-dot">
+            <span>{step.id}</span>
+          </div>
+          <div className="step-content">
+            <p className="step-title active-text">{step.title}</p>
+            <p className="step-subtitle active-sub">{step.status}</p>
+          </div>
+        </div>
+      )
+    }
+
     return (
-      <div className="progress-step active">
-        <div className="step-dot active-dot">
+      <div className="progress-step future">
+        <div className="step-dot future-dot">
           <span>{step.id}</span>
         </div>
         <div className="step-content">
-          <p className="step-title active-text">{step.title}</p>
-          <p className="step-subtitle active-sub">{step.status}</p>
+          <p className="step-title">{step.title}</p>
         </div>
       </div>
     )
   }
 
-  return (
-    <div className="progress-step future">
-      <div className="step-dot future-dot">
-        <span>{step.id}</span>
-      </div>
-      <div className="step-content">
-        <p className="step-title">{step.title}</p>
-      </div>
-    </div>
-  )
-}
-
-function ProgressPanel() {
   return (
     <aside className="progress-panel">
       <h3>Interview Progress</h3>

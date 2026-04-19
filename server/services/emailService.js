@@ -29,14 +29,16 @@ function getTransporter() {
   return transporter
 }
 
-function buildInterviewInviteEmail({ role, interviewLink, expiresAt }) {
+function buildInterviewInviteEmail({ role, interviewLink, expiresAt, candidateName }) {
   const expiry = new Date(expiresAt).toUTCString()
+  const safeName = candidateName && String(candidateName).trim() ? String(candidateName).trim() : 'Candidate'
 
   return {
     subject: `IntervueAI Interview Link - ${String(role).toUpperCase()} Role`,
     html: `
       <div style="font-family:Arial,sans-serif;line-height:1.6;color:#1f2937;max-width:620px;margin:0 auto;">
         <h2 style="margin-bottom:8px;">Your IntervueAI Interview Is Ready</h2>
+        <p>Hi ${safeName},</p>
         <p>Thank you for applying. Your interview link has been generated for the <strong>${String(role).toUpperCase()}</strong> track.</p>
         <p>This secure link is valid for <strong>24 hours</strong> and will expire on <strong>${expiry}</strong>.</p>
         <p style="margin:28px 0;">
@@ -49,14 +51,14 @@ function buildInterviewInviteEmail({ role, interviewLink, expiresAt }) {
         <p>Best regards,<br />IntervueAI Hiring Team</p>
       </div>
     `,
-    text: `Your IntervueAI interview link for ${String(role).toUpperCase()} is ready.\n\nStart Interview: ${interviewLink}\n\nThis link expires in 24 hours on ${expiry}.`,
+    text: `Hi ${safeName},\n\nYour IntervueAI interview link for ${String(role).toUpperCase()} is ready.\n\nStart Interview: ${interviewLink}\n\nThis link expires in 24 hours on ${expiry}.`,
   }
 }
 
-async function sendInterviewLinkEmail({ to, role, interviewLink, expiresAt }) {
+async function sendInterviewLinkEmail({ to, role, interviewLink, expiresAt, candidateName }) {
   const from = process.env.MAIL_FROM || 'noreply@intervueai.com'
   const transport = getTransporter()
-  const email = buildInterviewInviteEmail({ role, interviewLink, expiresAt })
+  const email = buildInterviewInviteEmail({ role, interviewLink, expiresAt, candidateName })
 
   await transport.sendMail({
     from,

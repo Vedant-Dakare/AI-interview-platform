@@ -1,24 +1,8 @@
-import crypto from 'crypto'
 import asyncHandler from '../middleware/asyncHandler.js'
 import prisma from '../prisma/client.js'
 import { sendInterviewLinkEmail } from '../services/emailService.js'
-import {
-  buildInterviewLink,
-  generateInterviewToken,
-  getTokenExpiry,
-  hashInterviewToken,
-} from '../utils/interviewToken.js'
-
-const ALLOWED_ROLES = new Set(['backend', 'ml', 'dsa'])
-
-function normalizeRole(role) {
-  if (typeof role !== 'string') {
-    return null
-  }
-
-  const normalized = role.trim().toLowerCase()
-  return ALLOWED_ROLES.has(normalized) ? normalized : null
-}
+import { createInterviewInvite, normalizeRole } from '../services/interviewInviteService.js'
+import { buildInterviewLink, generateInterviewToken, getTokenExpiry, hashInterviewToken } from '../utils/interviewToken.js'
 
 function getInviteValidationState(invite) {
   if (!invite) {
@@ -45,25 +29,6 @@ function getInviteValidationState(invite) {
   return { valid: true }
 }
 
-function buildQuestionPlan(role) {
-  const rolePlans = {
-    backend: {
-      focusAreas: ['System design basics', 'APIs and databases', 'Debugging and scalability'],
-      questionCount: 10,
-    },
-    ml: {
-      focusAreas: ['Model evaluation', 'Feature engineering', 'Production ML trade-offs'],
-      questionCount: 10,
-    },
-    dsa: {
-      focusAreas: ['Complexity analysis', 'Data structures', 'Problem solving strategy'],
-      questionCount: 10,
-    },
-  }
-
-  return rolePlans[role]
-}
-
 function requireSameIdentity(inviteEmail, loggedInEmail, res) {
   if (!loggedInEmail || inviteEmail.toLowerCase() !== loggedInEmail.toLowerCase()) {
     res.status(403)
@@ -86,38 +51,24 @@ const createInterviewLink = asyncHandler(async (req, res) => {
   }
 
   const normalizedEmail = email.trim().toLowerCase()
-  const token = generateInterviewToken()
-  const tokenHash = hashInterviewToken(token)
-  const tokenExpiry = getTokenExpiry(24)
-  const candidateId = crypto.randomUUID()
-  const interviewLink = buildInterviewLink(token)
-
-  const invite = await prisma.interviewInvite.create({
+  const existingCandidate = await prisma.candidate.create({
     data: {
-      candidateId,
+      fullName: normalizedEmail.split('@')[0],
       email: normalizedEmail,
       role: normalizedRole,
-      interviewTokenHash: tokenHash,
-      tokenExpiry,
-      status: 'pending',
-      resumeInsights: typeof resumeInsights === 'string' ? resumeInsights.trim() : null,
-      questionPlan: buildQuestionPlan(normalizedRole),
+      applicationStatus: 'invited',
     },
   })
 
-  if (sendEmail) {
-    await sendInterviewLinkEmail({
-      to: normalizedEmail,
-      role: normalizedRole,
-      interviewLink,
-      expiresAt: tokenExpiry,
-    })
-
-    await prisma.interviewInvite.update({
-      where: { id: invite.id },
-      data: { emailSentAt: new Date() },
-    })
-  }
+  const { invite, interviewLink } = await createInterviewInvite({
+    candidateRecordId: existingCandidate.id,
+    candidatePublicId: existingCandidate.candidateId,
+    email: normalizedEmail,
+    role: normalizedRole,
+    resumeInsights,
+    candidateName: existingCandidate.fullName,
+    sendEmail: Boolean(sendEmail),
+  })
 
   res.status(201).json({
     success: true,
@@ -168,6 +119,9 @@ const sendInterviewLink = asyncHandler(async (req, res) => {
       emailSentAt: new Date(),
       status: 'pending',
     },
+    include: {
+      candidate: true,
+    },
   })
 
   await sendInterviewLinkEmail({
@@ -175,6 +129,7 @@ const sendInterviewLink = asyncHandler(async (req, res) => {
     role: updatedInvite.role,
     interviewLink,
     expiresAt: updatedInvite.tokenExpiry,
+    candidateName: updatedInvite.candidate?.fullName,
   })
 
   res.status(200).json({

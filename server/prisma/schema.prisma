@@ -84,8 +84,27 @@ model Answer {
   question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
 }
 
+model Candidate {
+  id                Int             @id @default(autoincrement())
+  candidateId       String          @unique @default(uuid()) @map("candidate_id")
+  fullName          String          @map("full_name")
+  email             String
+  role              CandidateRole
+  resumeFileUrl     String?         @map("resume_file_url")
+  resumeInsights    String?         @map("resume_insights")
+  applicationStatus String          @default("submitted") @map("application_status")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+  invites           InterviewInvite[]
+
+  @@index([email])
+  @@index([role])
+  @@map("candidates")
+}
+
 model InterviewInvite {
   id                 Int           @id @default(autoincrement())
+  candidateRecordId  Int?          @map("candidate_record_id")
   candidateId        String        @unique @map("candidate_id")
   email              String
   role               CandidateRole
@@ -100,8 +119,11 @@ model InterviewInvite {
   createdAt          DateTime      @default(now()) @map("created_at")
   updatedAt          DateTime      @updatedAt @map("updated_at")
 
+  candidate Candidate? @relation(fields: [candidateRecordId], references: [id], onDelete: Cascade)
+
   @@index([email])
   @@index([status])
   @@index([tokenExpiry])
+  @@index([candidateRecordId])
   @@map("interview_invites")
 }

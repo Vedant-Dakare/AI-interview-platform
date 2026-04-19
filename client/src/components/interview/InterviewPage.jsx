@@ -1,18 +1,72 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import InterviewHeader from './InterviewHeader'
 import InterviewWorkspace from './InterviewWorkspace'
 import ProgressPanel from './ProgressPanel'
+import { startInterview, getInterview } from '../../services/interviewApi'
 
-function InterviewPage() {
+function InterviewPage({ interviewContext }) {
   const [hasAcceptedChecklist, setHasAcceptedChecklist] = useState(false)
   const [hasStartedInterview, setHasStartedInterview] = useState(false)
+  const [interviewState, setInterviewState] = useState({
+    interviewId: null,
+    role: interviewContext?.role || 'Backend Engineer',
+    status: 'loading',
+    currentQuestionIndex: 0,
+    questions: [],
+    answers: [],
+    totalQuestions: 0,
+    error: null,
+  })
+  const [timeRemaining, setTimeRemaining] = useState(900) // 15 minutes in seconds
 
-  function handleStartInterview() {
+  // Timer countdown
+  useEffect(() => {
+    if (!hasStartedInterview || interviewState.status === 'completed') {
+      return
+    }
+
+    const interval = setInterval(() => {
+      setTimeRemaining((prev) => {
+        if (prev <= 0) {
+          clearInterval(interval)
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [hasStartedInterview, interviewState.status])
+
+  // Start interview on button click
+  async function handleStartInterview() {
     if (!hasAcceptedChecklist) {
       return
     }
 
     setHasStartedInterview(true)
+    setInterviewState((prev) => ({ ...prev, status: 'loading' }))
+
+    try {
+      const response = await startInterview(interviewState.role)
+      const { data } = response
+
+      setInterviewState((prev) => ({
+        ...prev,
+        interviewId: data.interviewId,
+        role: data.role,
+        status: data.status,
+        currentQuestionIndex: data.currentQuestionIndex,
+        totalQuestions: data.totalQuestions,
+        questions: data.currentQuestion ? [data.currentQuestion] : [],
+      }))
+    } catch (error) {
+      setInterviewState((prev) => ({
+        ...prev,
+        status: 'error',
+        error: error.message,
+      }))
+    }
   }
 
   if (!hasStartedInterview) {
@@ -24,6 +78,12 @@ function InterviewPage() {
           <p>
             Review these rules before continuing. This session may be monitored for fairness and quality.
           </p>
+
+          {interviewState.role ? (
+            <p className="precheck-role-note">
+              Role: <strong>{String(interviewState.role).toUpperCase()}</strong>
+            </p>
+          ) : null}
 
           <ul className="precheck-list">
             <li>
@@ -79,12 +139,62 @@ function InterviewPage() {
     )
   }
 
+  if (interviewState.status === 'error') {
+    return (
+      <div className="interview-page precheck-page">
+        <section className="precheck-card">
+          <h2>Error Starting Interview</h2>
+          <p>{interviewState.error}</p>
+          <button
+            type="button"
+            className="btn-primary-sm"
+            onClick={() => window.location.hash = '/'}
+          >
+            Back to Home
+          </button>
+        </section>
+      </div>
+    )
+  }
+
+  if (interviewState.status === 'loading') {
+    return (
+      <div className="interview-page precheck-page">
+        <section className="precheck-card">
+          <h2>Starting your interview...</h2>
+          <p>Please wait while we load your questions.</p>
+        </section>
+      </div>
+    )
+  }
+
   return (
     <div className="interview-page">
-      <InterviewHeader />
+      <InterviewHeader
+        role={interviewState.role}
+        currentQuestion={interviewState.currentQuestionIndex + 1}
+        totalQuestions={interviewState.totalQuestions}
+        timeRemaining={timeRemaining}
+        interviewId={interviewState.interviewId}
+        onFinish={() => setInterviewState((prev) => ({ ...prev, status: 'completed' }))}
+      />
       <main className="interview-main">
-        <InterviewWorkspace />
-        <ProgressPanel />
+        <InterviewWorkspace
+          interviewId={interviewState.interviewId}
+          question={interviewState.questions[0] || 'Loading question...'}
+          currentQuestionIndex={interviewState.currentQuestionIndex}
+          totalQuestions={interviewState.totalQuestions}
+          onAnswerSubmitted={() => {
+            setInterviewState((prev) => ({
+              ...prev,
+              currentQuestionIndex: prev.currentQuestionIndex + 1,
+            }))
+          }}
+        />
+        <ProgressPanel
+          currentQuestionIndex={interviewState.currentQuestionIndex}
+          totalQuestions={interviewState.totalQuestions}
+        />
       </main>
     </div>
   )

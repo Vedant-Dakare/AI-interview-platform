@@ -1,4 +1,4 @@
-function CtaSection({ onViewDemo }) {
+function CtaSection({ onViewDemo, onRequestAccess }) {
   return (
     <section className="cta-section">
       <div className="cta-card">
@@ -12,7 +12,7 @@ function CtaSection({ onViewDemo }) {
             Join 200+ companies automating their technical pipeline with IntervueAI.
           </p>
           <div className="cta-actions">
-            <button type="button" className="cta-primary">
+            <button type="button" className="cta-primary" onClick={onRequestAccess}>
               Request Access
             </button>
             <button type="button" className="cta-secondary" onClick={onViewDemo}>

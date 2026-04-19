@@ -94,6 +94,16 @@ backend/
   - form-data: `resume` (PDF)
   - extracts text and stores metadata
 
+### Candidate Application
+
+- `POST /api/apply`
+  - form-data:
+    - `fullName` (required)
+    - `email` (required)
+    - `role` (`backend | ml | dsa`)
+    - `resume` (required PDF)
+  - creates candidate application, generates secure 24h interview token, stores invite, and sends interview link email
+
 ### Interview
 
 - `POST /api/interview/start`
