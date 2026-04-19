@@ -44,14 +44,18 @@ model Resume {
 }
 
 model Interview {
-  id                   Int        @id @default(autoincrement())
+  id                   Int              @id @default(autoincrement())
   userId               Int
   role                 String
-  currentQuestionIndex Int        @default(0)
-  status               String     @default("started")
-  createdAt            DateTime   @default(now())
-  updatedAt            DateTime   @updatedAt
+  currentQuestionIndex Int              @default(0)
+  status               String           @default("started")
+  warningCount         Int              @default(0)             @map("warning_count")
+  isTerminated         Boolean          @default(false)         @map("is_terminated")
+  terminationReason    String?          @map("termination_reason")
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
   questions            Question[]
+  proctoredEvents      ProctoredEvent[]
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -126,4 +130,18 @@ model InterviewInvite {
   @@index([tokenExpiry])
   @@index([candidateRecordId])
   @@map("interview_invites")
+}
+
+model ProctoredEvent {
+  id         Int      @id @default(autoincrement())
+  interviewId Int      @map("interview_id")
+  eventType  String   @map("event_type")
+  details    Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+
+  @@index([interviewId])
+  @@index([eventType])
+  @@map("proctor_events")
 }

@@ -1,4 +1,6 @@
-function ProgressPanel({ currentQuestionIndex, totalQuestions }) {
+import CameraPreview from './CameraPreview'
+
+function ProgressPanel({ currentQuestionIndex, totalQuestions, mediaStream }) {
   // Generate dynamic progress steps
   const steps = Array.from({ length: totalQuestions }, (_, i) => ({
     id: i + 1,
@@ -67,10 +69,7 @@ function ProgressPanel({ currentQuestionIndex, totalQuestions }) {
           </div>
 
           <div className="camera-frame">
-            <img
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuDV50wicWCuACfiOnRByYW429xqEAZMAp5ZGrOK_qHhYdWddSo_Kx23tgfpGEIFo2Mrn2QnlgatH4HtjRD0-J_31_iOaQ3ojVCwRKz9e1Ch55KDGf1vMc1CEbrftxBFJHeBujEZbKzM_lY_G_4WFevzrsgXXN0j0-memfHpqrccB1HubFMkYLTS8Vs_OdKWe2QQ4gFx9Y_fYxCaApdFa7NrsN4J40h0R2CEvirUybP3myfytF0DqAyLl-Jpxvrc3Bhi4paiQY5o0w"
-              alt="Self View"
-            />
+            <CameraPreview mediaStream={mediaStream} inline={true} />
             <div className="live-label">Live: You</div>
           </div>
         </div>

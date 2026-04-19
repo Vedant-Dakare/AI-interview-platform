@@ -6,6 +6,7 @@ import InterviewPage from './components/interview/InterviewPage'
 import AuthPage from './components/auth/AuthPage'
 import CandidateApplyPage from './components/apply/CandidateApplyPage'
 import { startInterviewWithToken, validateInterviewToken } from './services/interviewLinkApi'
+import { getAuthToken, logout } from './services/authApi'
 
 function extractInterviewToken(hash) {
   if (!hash.startsWith('#/interview/')) {
@@ -87,7 +88,7 @@ function App() {
       return
     }
 
-    const userToken = localStorage.getItem('intervueai-token')
+    const userToken = getAuthToken()
     if (!userToken) {
       // Not logged in - redirect to login and store pending token
       localStorage.setItem('pending-interview-token', interviewToken)
@@ -124,8 +125,7 @@ function App() {
 
         // If authorization fails, clear token and redirect to login
         if (error.message.includes('Unauthorized') || error.message.includes('invalid token')) {
-          localStorage.removeItem('intervueai-token')
-          localStorage.removeItem('intervueai-user')
+          logout()
           localStorage.setItem('pending-interview-token', interviewToken)
           setRoute('login')
           window.location.hash = '/login'
@@ -182,12 +182,10 @@ function App() {
           const pendingToken = localStorage.getItem('pending-interview-token')
 
           if (pendingToken) {
-            // Redirect back to interview link - this will trigger the interview-link useEffect
             window.location.hash = `/interview/${pendingToken}`
             return
           }
 
-          // No pending interview - go to interview page
           openInterviewPage()
         }}
         onSwitchToSignup={openSignUpPage}

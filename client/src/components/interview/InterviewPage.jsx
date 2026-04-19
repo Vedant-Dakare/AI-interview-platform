@@ -2,11 +2,21 @@ import { useEffect, useState } from 'react'
 import InterviewHeader from './InterviewHeader'
 import InterviewWorkspace from './InterviewWorkspace'
 import ProgressPanel from './ProgressPanel'
+import ProctoringWarnings from './ProctoringWarnings'
 import { startInterview, getInterview } from '../../services/interviewApi'
+import ProctoringManager from '../../services/ProctoringManager'
 
 function InterviewPage({ interviewContext }) {
   const [hasAcceptedChecklist, setHasAcceptedChecklist] = useState(false)
   const [hasStartedInterview, setHasStartedInterview] = useState(false)
+  const [permissionError, setPermissionError] = useState(null)
+  const [proctorState, setProctoredState] = useState({
+    manager: null,
+    mediaStream: null,
+    warningCount: 0,
+    isTerminated: false,
+    terminationReason: '',
+  })
   const [interviewState, setInterviewState] = useState({
     interviewId: null,
     role: interviewContext?.role || 'Backend Engineer',
@@ -18,6 +28,51 @@ function InterviewPage({ interviewContext }) {
     error: null,
   })
   const [timeRemaining, setTimeRemaining] = useState(900) // 15 minutes in seconds
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (proctorState.manager) {
+        proctorState.manager.stopMonitoring()
+      }
+      // Stop all camera tracks on unmount
+      if (proctorState.mediaStream) {
+        proctorState.mediaStream.getTracks().forEach((track) => track.stop())
+      }
+    }
+  }, [])
+
+  // Stop camera when interview is terminated
+  useEffect(() => {
+    if (proctorState.isTerminated && proctorState.mediaStream) {
+      console.log('[InterviewPage] Stopping camera due to interview termination')
+      proctorState.mediaStream.getTracks().forEach((track) => {
+        track.stop()
+        console.log(`[InterviewPage] Stopped ${track.kind} track`)
+      })
+      
+      // Also stop monitoring
+      if (proctorState.manager) {
+        proctorState.manager.stopMonitoring()
+      }
+    }
+  }, [proctorState.isTerminated])
+
+  // Stop camera when interview is completed normally
+  useEffect(() => {
+    if (interviewState.status === 'completed' && proctorState.mediaStream) {
+      console.log('[InterviewPage] Stopping camera due to interview completion')
+      proctorState.mediaStream.getTracks().forEach((track) => {
+        track.stop()
+        console.log(`[InterviewPage] Stopped ${track.kind} track`)
+      })
+      
+      // Also stop monitoring
+      if (proctorState.manager) {
+        proctorState.manager.stopMonitoring()
+      }
+    }
+  }, [interviewState.status])
 
   // Timer countdown
   useEffect(() => {
@@ -44,23 +99,71 @@ function InterviewPage({ interviewContext }) {
       return
     }
 
+    setPermissionError(null)
     setHasStartedInterview(true)
     setInterviewState((prev) => ({ ...prev, status: 'loading' }))
 
     try {
+      // Step 1: Start interview backend
       const response = await startInterview(interviewState.role)
       const { data } = response
+      const interviewId = data.interviewId
 
       setInterviewState((prev) => ({
         ...prev,
-        interviewId: data.interviewId,
+        interviewId,
         role: data.role,
         status: data.status,
         currentQuestionIndex: data.currentQuestionIndex,
         totalQuestions: data.totalQuestions,
         questions: data.currentQuestion ? [data.currentQuestion] : [],
       }))
+
+      // Step 2: Initialize proctoring
+      try {
+        const manager = new ProctoringManager(
+          interviewId,
+          // onWarningUpdate callback
+          (warningCount) => {
+            setProctoredState((prev) => ({
+              ...prev,
+              warningCount,
+            }))
+          },
+          // onTerminated callback
+          (reason) => {
+            setProctoredState((prev) => ({
+              ...prev,
+              isTerminated: true,
+              terminationReason: reason,
+            }))
+            setInterviewState((prev) => ({
+              ...prev,
+              status: 'terminated',
+            }))
+          }
+        )
+
+        await manager.init()
+
+        setProctoredState((prev) => ({
+          ...prev,
+          manager,
+          mediaStream: manager.getVideoStream(),
+        }))
+
+        console.log('[InterviewPage] Proctoring initialized successfully')
+      } catch (error) {
+        setPermissionError(error.message)
+        setHasStartedInterview(false)
+        setInterviewState((prev) => ({
+          ...prev,
+          status: 'idle',
+        }))
+        throw error
+      }
     } catch (error) {
+      console.error('[InterviewPage] Error starting interview:', error.message)
       setInterviewState((prev) => ({
         ...prev,
         status: 'error',
@@ -78,6 +181,16 @@ function InterviewPage({ interviewContext }) {
           <p>
             Review these rules before continuing. This session may be monitored for fairness and quality.
           </p>
+
+          {permissionError && (
+            <div className="permission-error">
+              <span className="material-symbols-outlined">error</span>
+              <div>
+                <h3>Access Required</h3>
+                <p>{permissionError}</p>
+              </div>
+            </div>
+          )}
 
           {interviewState.role ? (
             <p className="precheck-role-note">
@@ -139,6 +252,18 @@ function InterviewPage({ interviewContext }) {
     )
   }
 
+  if (interviewState.status === 'terminated' || proctorState.isTerminated) {
+    return (
+      <div className="interview-page precheck-page">
+        <ProctoringWarnings
+          warningCount={5}
+          isTerminated={true}
+          terminationReason={proctorState.terminationReason || interviewState.error || 'Interview was terminated'}
+        />
+      </div>
+    )
+  }
+
   if (interviewState.status === 'error') {
     return (
       <div className="interview-page precheck-page">
@@ -170,6 +295,11 @@ function InterviewPage({ interviewContext }) {
 
   return (
     <div className="interview-page">
+      <ProctoringWarnings
+        warningCount={proctorState.warningCount}
+        isTerminated={proctorState.isTerminated}
+        terminationReason={proctorState.terminationReason}
+      />
       <InterviewHeader
         role={interviewState.role}
         currentQuestion={interviewState.currentQuestionIndex + 1}
@@ -194,6 +324,7 @@ function InterviewPage({ interviewContext }) {
         <ProgressPanel
           currentQuestionIndex={interviewState.currentQuestionIndex}
           totalQuestions={interviewState.totalQuestions}
+          mediaStream={proctorState.mediaStream}
         />
       </main>
     </div>

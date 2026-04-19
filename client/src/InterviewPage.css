@@ -832,8 +832,9 @@ body {
   background: rgb(53 52 55 / 50%);
   border-radius: 12px;
   padding: 16px;
-  display: grid;
-  gap: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .camera-head {
@@ -860,38 +861,35 @@ body {
 
 .camera-frame {
   position: relative;
-  aspect-ratio: 16 / 9;
+  width: 100%;
+  height: 180px;
   border-radius: 8px;
   overflow: hidden;
-  background: var(--surface);
+  background: #000;
 }
 
-.camera-frame img {
+.camera-frame video {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  filter: grayscale(1);
-  opacity: 0.6;
-  transition: filter 0.6s ease, opacity 0.6s ease;
+  display: block;
 }
 
-.camera-frame:hover img {
-  filter: grayscale(0);
-  opacity: 0.95;
-}
+
 
 .live-label {
   position: absolute;
-  left: 8px;
-  bottom: 8px;
-  padding: 3px 8px;
+  left: 6px;
+  bottom: 6px;
+  padding: 4px 8px;
   border-radius: 4px;
-  background: rgb(0 0 0 / 60%);
-  font-size: 0.48rem;
+  background: rgb(0 0 0 / 70%);
+  font-size: 0.45rem;
   font-weight: 700;
   color: #fff;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
+  z-index: 10;
 }
 
 .floating-hint {
@@ -1071,4 +1069,38 @@ body {
   .floating-hint span:last-child {
     letter-spacing: 0.12em;
   }
+}
+
+
+/* Permission Error Display */
+.permission-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px 20px;
+  margin-bottom: 24px;
+  background: rgb(147 0 10 / 15%);
+  border: 1px solid rgb(255 180 171 / 30%);
+  border-radius: 12px;
+}
+
+.permission-error .material-symbols-outlined {
+  color: var(--error);
+  font-size: 1.5rem;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.permission-error h3 {
+  margin: 0 0 4px;
+  color: var(--error);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.permission-error p {
+  margin: 0;
+  color: var(--on-surface);
+  font-size: 0.95rem;
+  line-height: 1.5;
 }

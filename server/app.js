@@ -11,6 +11,7 @@ import applicationRoutes from './routes/applicationRoutes.js'
 import interviewRoutes from './routes/interviewRoutes.js'
 import interviewLinkRoutes from './routes/interviewLinkRoutes.js'
 import resumeRoutes from './routes/resumeRoutes.js'
+import proctorRoutes from './routes/proctorRoutes.js'
 import { errorHandler, notFound } from './middleware/errorMiddleware.js'
 import prisma from './prisma/client.js'
 
@@ -53,6 +54,7 @@ app.use('/api/apply', applicationRoutes)
 app.use('/api/resume', resumeRoutes)
 app.use('/api/interview', interviewRoutes)
 app.use('/api/interview-links', interviewLinkRoutes)
+app.use('/api/proctor', proctorRoutes)
 
 app.use(notFound)
 app.use(errorHandler)

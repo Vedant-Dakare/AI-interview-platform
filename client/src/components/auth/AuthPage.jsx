@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { login, signup } from '../../services/authApi'
+import { login, signup, getAuthToken } from '../../services/authApi'
 
 function AuthPage({ mode = 'login', onSuccess, onSwitchToSignup, onSwitchToLogin, onBackHome }) {
   const [fullName, setFullName] = useState('')

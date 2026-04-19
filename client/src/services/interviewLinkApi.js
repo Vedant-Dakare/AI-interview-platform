@@ -1,8 +1,6 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
+import { getAuthToken } from './authApi'
 
-function getAuthToken() {
-  return localStorage.getItem('intervueai-token')
-}
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
 async function requestWithAuth(path, method = 'GET') {
   const token = getAuthToken()

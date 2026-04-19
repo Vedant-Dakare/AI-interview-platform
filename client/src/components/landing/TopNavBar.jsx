@@ -1,5 +1,7 @@
+import { getAuthToken } from '../../services/authApi'
+
 function TopNavBar({ onGetDemo, onSignIn }) {
-  const isLoggedIn = Boolean(localStorage.getItem('intervueai-token'))
+  const isLoggedIn = Boolean(getAuthToken())
 
   return (
     <nav className="top-nav">
