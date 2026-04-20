@@ -31,8 +31,41 @@ async function requestWithAuth(path, method = 'GET', body = null) {
   return data
 }
 
-export async function startInterview(role) {
-  return requestWithAuth('/api/interview/start', 'POST', { role })
+async function requestBinaryWithAuth(path, method = 'GET', body = null) {
+  const token = getAuthToken()
+
+  if (!token) {
+    throw new Error('Please sign in to continue')
+  }
+
+  const options = {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  }
+
+  if (body) {
+    options.headers['Content-Type'] = 'application/json'
+    options.body = JSON.stringify(body)
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, options)
+
+  if (!response.ok) {
+    const message = await response.text().catch(() => '')
+    throw new Error(message || 'Interview audio request failed')
+  }
+
+  return response.blob()
+}
+
+export async function startInterview(role, candidateName) {
+  return requestWithAuth('/api/interview/start', 'POST', { role, candidateName })
+}
+
+export async function getRoleQuestions(role) {
+  return requestWithAuth(`/api/interview/questions?role=${encodeURIComponent(role)}`, 'GET')
 }
 
 export async function getInterview(interviewId) {
@@ -47,6 +80,22 @@ export async function moveToNextQuestion(interviewId) {
   return requestWithAuth(`/api/interview/${interviewId}/next`, 'POST')
 }
 
+export async function submitInterviewAnswer(interviewId, questionId, answerText) {
+  return requestWithAuth('/api/interview/answer', 'POST', {
+    interviewId,
+    questionId,
+    answerText,
+  })
+}
+
 export async function endInterview(interviewId) {
   return requestWithAuth(`/api/interview/${interviewId}/end`, 'POST')
+}
+
+export async function endInterviewById(interviewId) {
+  return requestWithAuth('/api/interview/end', 'POST', { interviewId })
+}
+
+export async function synthesizeInterviewSpeech(text) {
+  return requestBinaryWithAuth('/api/interview/tts', 'POST', { text })
 }

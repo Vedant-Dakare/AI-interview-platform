@@ -1,4 +1,22 @@
-import { endInterview } from '../../services/interviewApi'
+import { endInterviewById } from '../../services/interviewApi'
+
+function formatRole(role) {
+  const normalized = String(role || '').toLowerCase()
+
+  if (normalized === 'dsa') {
+    return 'DSA'
+  }
+
+  if (normalized === 'ml') {
+    return 'ML'
+  }
+
+  if (normalized === 'backend') {
+    return 'Backend'
+  }
+
+  return String(role || 'Backend')
+}
 
 function InterviewHeader({ role, currentQuestion, totalQuestions, timeRemaining, interviewId, onFinish }) {
   const minutes = Math.floor(timeRemaining / 60)
@@ -8,7 +26,7 @@ function InterviewHeader({ role, currentQuestion, totalQuestions, timeRemaining,
   async function handleFinishSession() {
     if (window.confirm('Are you sure you want to end the interview? Your answers will be saved.')) {
       try {
-        await endInterview(interviewId)
+        await endInterviewById(interviewId)
         onFinish?.()
         window.location.hash = '/'
       } catch (error) {
@@ -30,7 +48,7 @@ function InterviewHeader({ role, currentQuestion, totalQuestions, timeRemaining,
 
       <div className="header-center">
         <div className="question-pill">
-          <span>QUESTION {currentQuestion}/{totalQuestions}</span>
+          <span>INTERVIEW FOR: {formatRole(role)} | QUESTION {currentQuestion}/{totalQuestions}</span>
         </div>
         <div className="strict-pill">
           <span className="material-symbols-outlined fill">warning</span>

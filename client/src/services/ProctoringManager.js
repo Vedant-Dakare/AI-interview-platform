@@ -3,6 +3,10 @@
  * Handles: Camera/Mic permissions, fullscreen enforcement, violation detection, warning system
  */
 
+import { getAuthToken } from './authApi'
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
+
 class ProctoringManager {
   constructor(interviewId, onWarningUpdate, onTerminated) {
     this.interviewId = interviewId
@@ -14,6 +18,8 @@ class ProctoringManager {
     this.mediaStream = null
     this.isFullscreen = false
     this.tabSwitchTimeout = null
+    this.hasPendingFullscreenRecovery = false
+    this.proctorApiUnauthorized = false
 
     // Event listeners references for cleanup
     this.listeners = {}
@@ -34,8 +40,12 @@ class ProctoringManager {
       // Step 2: Start monitoring
       this.startMonitoring()
 
-      // Step 3: Request fullscreen
-      await this.enterFullscreen()
+      // Step 3: Request fullscreen. If blocked by browser gesture rules,
+      // keep interview running and recover fullscreen on next user interaction.
+      const enteredFullscreen = await this.enterFullscreen({ throwOnFailure: false })
+      if (!enteredFullscreen) {
+        this.scheduleFullscreenRecovery()
+      }
 
       return true
     } catch (error) {
@@ -48,6 +58,23 @@ class ProctoringManager {
    * Request camera and microphone access
    */
   async requestPermissions() {
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      throw new Error('This browser does not support camera and microphone access for proctored interviews.')
+    }
+
+    if (!window.isSecureContext) {
+      throw new Error(
+        'Camera and microphone require a secure context. Open the app on localhost or HTTPS and try again.'
+      )
+    }
+
+    const permissionState = await this.getPermissionState()
+    if (permissionState.camera === 'denied' || permissionState.microphone === 'denied') {
+      throw new Error(
+        'Camera or microphone permission is blocked in browser site settings. Enable both permissions and retry.'
+      )
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -63,11 +90,55 @@ class ProctoringManager {
       // Monitor camera status
       this.monitorCameraStatus(stream)
     } catch (error) {
-      console.error('[ProctoringManager] Permission denied:', error.message)
-      throw new Error(
-        'Camera and Microphone access are required to start the interview. Please grant permissions and try again.'
-      )
+      console.error('[ProctoringManager] Permission denied:', error.name, error.message)
+      throw new Error(this.mapPermissionError(error))
     }
+  }
+
+  async getPermissionState() {
+    if (!navigator.permissions?.query) {
+      return { camera: 'prompt', microphone: 'prompt' }
+    }
+
+    try {
+      const [cameraStatus, microphoneStatus] = await Promise.all([
+        navigator.permissions.query({ name: 'camera' }),
+        navigator.permissions.query({ name: 'microphone' }),
+      ])
+
+      return {
+        camera: cameraStatus?.state || 'prompt',
+        microphone: microphoneStatus?.state || 'prompt',
+      }
+    } catch {
+      return { camera: 'prompt', microphone: 'prompt' }
+    }
+  }
+
+  mapPermissionError(error) {
+    const name = error?.name || ''
+
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+      return 'Camera and microphone access were denied. Click the lock icon in your browser address bar, allow both permissions, and try again.'
+    }
+
+    if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+      return 'No camera or microphone was detected. Connect both devices and try again.'
+    }
+
+    if (name === 'NotReadableError' || name === 'TrackStartError') {
+      return 'Camera or microphone is currently in use by another app. Close other apps using these devices and retry.'
+    }
+
+    if (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError') {
+      return 'Requested media constraints are not supported by your device. Reconnect your camera and microphone, then retry.'
+    }
+
+    if (name === 'AbortError') {
+      return 'Camera or microphone initialization was interrupted. Please retry.'
+    }
+
+    return 'Camera and microphone access are required to start the interview. Please grant permissions and try again.'
   }
 
   /**
@@ -100,7 +171,7 @@ class ProctoringManager {
   /**
    * Request fullscreen
    */
-  async enterFullscreen() {
+  async enterFullscreen({ throwOnFailure = true } = {}) {
     try {
       const elem = document.documentElement
 
@@ -112,24 +183,43 @@ class ProctoringManager {
         await elem.webkitRequestFullscreen()
         this.isFullscreen = true
       }
+
+      return true
     } catch (error) {
       console.error('[ProctoringManager] Could not enable fullscreen:', error.message)
-      throw new Error('Failed to enable fullscreen mode. Please try again.')
+      this.isFullscreen = false
+
+      if (throwOnFailure) {
+        throw new Error('Failed to enable fullscreen mode. Please try again.')
+      }
+
+      return false
     }
   }
 
   /**
-   * Re-enforce fullscreen when user tries to exit
+   * Recover fullscreen only on next user gesture to satisfy browser constraints.
    */
-  async enforceFullscreen() {
-    if (!this.isFullscreen) {
-      try {
-        await this.enterFullscreen()
-        this.recordViolation('FULLSCREEN_EXIT', { action: 'auto-restored' })
-      } catch (error) {
-        console.warn('[ProctoringManager] Could not restore fullscreen:', error.message)
+  scheduleFullscreenRecovery() {
+    if (this.hasPendingFullscreenRecovery || this.isTerminated) {
+      return
+    }
+
+    this.hasPendingFullscreenRecovery = true
+
+    const tryRecover = async () => {
+      const recovered = await this.enterFullscreen({ throwOnFailure: false })
+      if (recovered) {
+        this.hasPendingFullscreenRecovery = false
+        window.removeEventListener('pointerdown', tryRecover, true)
+        window.removeEventListener('keydown', tryRecover, true)
+        console.log('[ProctoringManager] Fullscreen restored from user interaction')
       }
     }
+
+    this.listeners.fullscreenRecover = tryRecover
+    window.addEventListener('pointerdown', tryRecover, true)
+    window.addEventListener('keydown', tryRecover, true)
   }
 
   /**
@@ -157,9 +247,11 @@ class ProctoringManager {
       if (!isCurrentlyFullscreen && this.isFullscreen) {
         console.warn('[ProctoringManager] User exited fullscreen')
         this.isFullscreen = false
-        await this.enforceFullscreen()
+        this.recordViolation('FULLSCREEN_EXIT', { action: 'manual-exit' })
+        this.scheduleFullscreenRecovery()
       } else if (isCurrentlyFullscreen && !this.isFullscreen) {
         this.isFullscreen = true
+        this.hasPendingFullscreenRecovery = false
       }
     }
 
@@ -241,6 +333,10 @@ class ProctoringManager {
       return
     }
 
+    if (this.proctorApiUnauthorized) {
+      return
+    }
+
     // Debounce repeated violations
     const now = Date.now()
     const lastTime = this.lastViolationTime[type] || 0
@@ -252,10 +348,13 @@ class ProctoringManager {
     this.lastViolationTime[type] = now
 
     try {
-      const response = await fetch('/api/proctor/proctor-event', {
+      const token = getAuthToken()
+
+      const response = await fetch(`${API_BASE_URL}/api/proctor/proctor-event`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           interviewId: this.interviewId,
@@ -264,7 +363,17 @@ class ProctoringManager {
         }),
       })
 
-      const data = await response.json()
+      if (response.status === 401) {
+        this.proctorApiUnauthorized = true
+        console.warn('[ProctoringManager] Proctor API unauthorized. Event reporting paused until next login.')
+        return
+      }
+
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to record proctor event')
+      }
 
       if (data.success) {
         this.warningCount = data.warningCount || this.warningCount
@@ -296,16 +405,24 @@ class ProctoringManager {
     this.stopMonitoring()
 
     try {
-      await fetch('/api/proctor/terminate', {
+      const token = getAuthToken()
+
+      const response = await fetch(`${API_BASE_URL}/api/proctor/terminate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           interviewId: this.interviewId,
           reason,
         }),
       })
+
+      if (response.status === 401) {
+        this.proctorApiUnauthorized = true
+        console.warn('[ProctoringManager] Unauthorized during terminate call.')
+      }
 
       if (this.onTerminated) {
         this.onTerminated(reason)
@@ -327,6 +444,8 @@ class ProctoringManager {
     window.removeEventListener('blur', this.listeners.blur)
     window.removeEventListener('focus', this.listeners.focus)
     window.removeEventListener('keydown', this.listeners.keydown)
+    window.removeEventListener('pointerdown', this.listeners.fullscreenRecover, true)
+    window.removeEventListener('keydown', this.listeners.fullscreenRecover, true)
 
     // Stop media stream
     if (this.mediaStream) {
