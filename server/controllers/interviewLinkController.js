@@ -208,12 +208,16 @@ const startInterviewWithToken = asyncHandler(async (req, res) => {
     data: {
       startedAt: invite.startedAt || new Date(),
     },
+    include: {
+      candidate: true,
+    },
   })
 
   res.status(200).json({
     success: true,
     data: {
       candidateId: updatedInvite.candidateId,
+      candidateFullName: updatedInvite.candidate?.fullName || req.user?.name || 'Candidate',
       role: updatedInvite.role,
       resumeInsights: updatedInvite.resumeInsights,
       questionPlan: updatedInvite.questionPlan,

@@ -3,7 +3,7 @@ import InterviewHeader from './InterviewHeader'
 import InterviewWorkspace from './InterviewWorkspace'
 import ProgressPanel from './ProgressPanel'
 import ProctoringWarnings from './ProctoringWarnings'
-import { startInterview, getInterview } from '../../services/interviewApi'
+import { startInterview } from '../../services/interviewApi'
 import ProctoringManager from '../../services/ProctoringManager'
 
 function InterviewPage({ interviewContext }) {
@@ -19,7 +19,8 @@ function InterviewPage({ interviewContext }) {
   })
   const [interviewState, setInterviewState] = useState({
     interviewId: null,
-    role: interviewContext?.role || 'Backend Engineer',
+    role: interviewContext?.role || 'backend',
+    candidateName: interviewContext?.candidateFullName || interviewContext?.candidateName || 'Candidate',
     status: 'loading',
     currentQuestionIndex: 0,
     questions: [],
@@ -105,7 +106,7 @@ function InterviewPage({ interviewContext }) {
 
     try {
       // Step 1: Start interview backend
-      const response = await startInterview(interviewState.role)
+      const response = await startInterview(interviewState.role, interviewState.candidateName)
       const { data } = response
       const interviewId = data.interviewId
 
@@ -113,10 +114,11 @@ function InterviewPage({ interviewContext }) {
         ...prev,
         interviewId,
         role: data.role,
+        candidateName: data.candidateName || prev.candidateName,
         status: data.status,
         currentQuestionIndex: data.currentQuestionIndex,
         totalQuestions: data.totalQuestions,
-        questions: data.currentQuestion ? [data.currentQuestion] : [],
+        questions: data.questions || [],
       }))
 
       // Step 2: Initialize proctoring
@@ -302,7 +304,7 @@ function InterviewPage({ interviewContext }) {
       />
       <InterviewHeader
         role={interviewState.role}
-        currentQuestion={interviewState.currentQuestionIndex + 1}
+        currentQuestion={Math.min(interviewState.currentQuestionIndex + 1, Math.max(interviewState.totalQuestions, 1))}
         totalQuestions={interviewState.totalQuestions}
         timeRemaining={timeRemaining}
         interviewId={interviewState.interviewId}
@@ -311,13 +313,22 @@ function InterviewPage({ interviewContext }) {
       <main className="interview-main">
         <InterviewWorkspace
           interviewId={interviewState.interviewId}
-          question={interviewState.questions[0] || 'Loading question...'}
+          candidateName={interviewState.candidateName}
+          role={interviewState.role}
+          question={interviewState.questions[interviewState.currentQuestionIndex] || null}
           currentQuestionIndex={interviewState.currentQuestionIndex}
           totalQuestions={interviewState.totalQuestions}
-          onAnswerSubmitted={() => {
+          onAnswerSubmitted={(nextIndex, nextStatus) => {
             setInterviewState((prev) => ({
               ...prev,
-              currentQuestionIndex: prev.currentQuestionIndex + 1,
+              currentQuestionIndex: Number.isInteger(nextIndex) ? nextIndex : prev.currentQuestionIndex,
+              status: nextStatus || prev.status,
+            }))
+          }}
+          onInterviewCompleted={() => {
+            setInterviewState((prev) => ({
+              ...prev,
+              status: 'completed',
             }))
           }}
         />

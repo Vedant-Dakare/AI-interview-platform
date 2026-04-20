@@ -360,12 +360,14 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  padding-top: 96px;
+  padding-bottom: 36px;
 }
 
 .ai-visual-wrap {
   position: relative;
-  margin-bottom: 64px;
+  margin-bottom: 40px;
 }
 
 .ai-visual-core {
@@ -429,7 +431,6 @@ body {
   position: absolute;
   inset: 0;
   background: rgb(195 192 255 / 20%);
-  filter: blur(80px);
 }
 
 .ai-pulse {
@@ -443,6 +444,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  margin-bottom: 24px;
 }
 
 .question-block h2 {
@@ -466,18 +468,17 @@ body {
 }
 
 .interaction-zone {
-  position: absolute;
-  bottom: 48px;
+  position: static;
   width: 100%;
   max-width: 860px;
-  padding: 0 32px;
+  padding: 0;
+  margin-top: auto;
 }
 
 .interaction-card {
   border-radius: 999px;
   border: 1px solid rgb(70 69 85 / 15%);
   background: rgb(27 27 29 / 60%);
-  backdrop-filter: blur(14px);
   box-shadow: 0 20px 40px rgb(0 0 0 / 40%);
   padding: 18px 28px;
   display: flex;
