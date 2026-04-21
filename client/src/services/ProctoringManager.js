@@ -272,8 +272,7 @@ class ProctoringManager {
         console.warn('[ProctoringManager] Tab became hidden - potential tab switch')
         this.recordViolation('TAB_SWITCH', { status: 'tab-hidden' })
       } else {
-        console.warn('[ProctoringManager] Tab became visible again')
-        this.recordViolation('TAB_SWITCH', { status: 'tab-visible' })
+        console.log('[ProctoringManager] Tab became visible again')
       }
     }
 

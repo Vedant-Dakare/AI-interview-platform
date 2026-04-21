@@ -114,6 +114,7 @@ function InterviewWorkspace({
   const audioPlayerRef = useRef(null)
   const latestAnswerRef = useRef('')
   const isSubmittingRef = useRef(false)
+  const listeningSessionRef = useRef(0)
 
   const supportsSpeechRecognition = useMemo(() => Boolean(getSpeechRecognition()), [])
 
@@ -132,7 +133,11 @@ function InterviewWorkspace({
         recognitionRef.current.onresult = null
         recognitionRef.current.onerror = null
         recognitionRef.current.onend = null
-        recognitionRef.current.stop()
+        if (typeof recognitionRef.current.abort === 'function') {
+          recognitionRef.current.abort()
+        } else {
+          recognitionRef.current.stop()
+        }
       } catch {
         // Ignore stop errors from already stopped recognizers.
       }
@@ -239,11 +244,14 @@ function InterviewWorkspace({
 
     setError('')
     stopListening()
+    const activeSessionId = listeningSessionRef.current + 1
+    listeningSessionRef.current = activeSessionId
     setVoiceState('listening')
 
     const SpeechRecognition = getSpeechRecognition()
     const recognition = new SpeechRecognition()
     let finalTranscript = ''
+    let lastCapturedTranscript = ''
 
     recognition.lang = 'en-US'
     recognition.interimResults = true
@@ -251,6 +259,10 @@ function InterviewWorkspace({
     recognition.maxAlternatives = 1
 
     recognition.onresult = (event) => {
+      if (activeSessionId !== listeningSessionRef.current) {
+        return
+      }
+
       let interimTranscript = ''
 
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
@@ -264,19 +276,28 @@ function InterviewWorkspace({
 
       const combinedTranscript = `${finalTranscript}${interimTranscript}`.trim()
       if (combinedTranscript) {
+        lastCapturedTranscript = combinedTranscript
         setAnswer(combinedTranscript)
       }
     }
 
     recognition.onerror = () => {
+      if (activeSessionId !== listeningSessionRef.current) {
+        return
+      }
+
       setVoiceState('idle')
       setError('Could not capture your voice. Please retry or type your answer.')
     }
 
     recognition.onend = () => {
+      if (activeSessionId !== listeningSessionRef.current) {
+        return
+      }
+
       clearNoSpeechTimer()
 
-      const transcript = finalTranscript.trim() || latestAnswerRef.current.trim()
+      const transcript = finalTranscript.trim() || lastCapturedTranscript.trim()
       if (!transcript || isSubmittingRef.current) {
         if (!isSubmittingRef.current) {
           setVoiceState('idle')
@@ -293,6 +314,10 @@ function InterviewWorkspace({
     try {
       recognition.start()
     } catch {
+      if (activeSessionId !== listeningSessionRef.current) {
+        return
+      }
+
       setVoiceState('idle')
       setError('Could not start voice listening. Please click Retry Listening again or type your answer.')
       recognitionRef.current = null
@@ -300,7 +325,11 @@ function InterviewWorkspace({
     }
 
     noSpeechTimerRef.current = window.setTimeout(() => {
-      if (!finalTranscript.trim() && !latestAnswerRef.current.trim()) {
+      if (activeSessionId !== listeningSessionRef.current) {
+        return
+      }
+
+      if (!finalTranscript.trim() && !lastCapturedTranscript.trim()) {
         stopListening()
         setVoiceState('idle')
         setError('No response detected. Click Retry Listening or type your answer.')
@@ -375,6 +404,25 @@ function InterviewWorkspace({
     } finally {
       setIsSubmitting(false)
       isSubmittingRef.current = false
+    }
+  }
+
+  async function handleRetryListening() {
+    if (!question?.questionText || isSubmittingRef.current) {
+      return
+    }
+
+    setError('')
+    stopListening()
+    cancelSpeech()
+
+    try {
+      await speakText(`Question ${currentQuestionIndex + 1}: ${question.questionText}`)
+      await new Promise((resolve) => window.setTimeout(resolve, 250))
+      startListening()
+    } catch {
+      setVoiceState('idle')
+      setError('Could not replay the question. Please retry or type your answer.')
     }
   }
 
@@ -471,7 +519,7 @@ function InterviewWorkspace({
               </button>
               <button
                 className="next-question-btn"
-                onClick={startListening}
+                onClick={handleRetryListening}
                 disabled={isSubmitting || voiceState === 'speaking'}
               >
                 Retry Listening
