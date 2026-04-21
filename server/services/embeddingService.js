@@ -64,11 +64,14 @@ function cosineSimilarity(vectorA, vectorB) {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB))
 }
 
+function clampSimilarity(value) {
+  return Number(Math.max(0, Math.min(1, value)).toFixed(4))
+}
+
 function scoreAnswer(answerText, idealAnswerText) {
   const answerEmbedding = buildEmbeddingVector(answerText)
   const idealEmbedding = buildEmbeddingVector(idealAnswerText)
-  const similarity = cosineSimilarity(answerEmbedding, idealEmbedding)
-  const similarityScore = Number(Math.max(0, Math.min(1, similarity)).toFixed(4))
+  const similarityScore = clampSimilarity(cosineSimilarity(answerEmbedding, idealEmbedding))
   const score = Number((similarityScore * 100).toFixed(2))
 
   return {
@@ -79,4 +82,4 @@ function scoreAnswer(answerText, idealAnswerText) {
   }
 }
 
-export { buildEmbeddingVector, scoreAnswer }
+export { buildEmbeddingVector, cosineSimilarity, clampSimilarity, scoreAnswer }

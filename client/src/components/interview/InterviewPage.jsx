@@ -3,7 +3,7 @@ import InterviewHeader from './InterviewHeader'
 import InterviewWorkspace from './InterviewWorkspace'
 import ProgressPanel from './ProgressPanel'
 import ProctoringWarnings from './ProctoringWarnings'
-import { startInterview } from '../../services/interviewApi'
+import { getInterviewReport, startInterview } from '../../services/interviewApi'
 import ProctoringManager from '../../services/ProctoringManager'
 
 function InterviewPage({ interviewContext }) {
@@ -29,6 +29,9 @@ function InterviewPage({ interviewContext }) {
     error: null,
   })
   const [timeRemaining, setTimeRemaining] = useState(900) // 15 minutes in seconds
+  const [finalReport, setFinalReport] = useState(null)
+  const [isLoadingReport, setIsLoadingReport] = useState(false)
+  const [reportError, setReportError] = useState('')
 
   // Cleanup on unmount
   useEffect(() => {
@@ -93,6 +96,26 @@ function InterviewPage({ interviewContext }) {
 
     return () => clearInterval(interval)
   }, [hasStartedInterview, interviewState.status])
+
+  useEffect(() => {
+    if (interviewState.status !== 'completed' || !interviewState.interviewId) {
+      return
+    }
+
+    setIsLoadingReport(true)
+    setReportError('')
+
+    getInterviewReport(interviewState.interviewId)
+      .then((response) => {
+        setFinalReport(response?.data || null)
+      })
+      .catch((error) => {
+        setReportError(error.message)
+      })
+      .finally(() => {
+        setIsLoadingReport(false)
+      })
+  }, [interviewState.status, interviewState.interviewId])
 
   // Start interview on button click
   async function handleStartInterview() {
@@ -290,6 +313,85 @@ function InterviewPage({ interviewContext }) {
         <section className="precheck-card">
           <h2>Starting your interview...</h2>
           <p>Please wait while we load your questions.</p>
+        </section>
+      </div>
+    )
+  }
+
+  if (interviewState.status === 'completed') {
+    return (
+      <div className="interview-page precheck-page">
+        <section className="precheck-card">
+          <span className="precheck-badge">Interview Complete</span>
+          <h1>Final Evaluation Report</h1>
+
+          {isLoadingReport && <p>Processing your interview report...</p>}
+
+          {reportError && (
+            <div className="permission-error">
+              <span className="material-symbols-outlined">error</span>
+              <div>
+                <h3>Could not load report</h3>
+                <p>{reportError}</p>
+              </div>
+            </div>
+          )}
+
+          {finalReport && (
+            <div>
+              <p className="precheck-role-note">Overall Score: <strong>{finalReport.overallScore}</strong></p>
+              <p className="precheck-role-note">Average Score: <strong>{finalReport.averageScore}</strong></p>
+              <p className="precheck-role-note">Recommendation: <strong>{finalReport.recommendation}</strong></p>
+
+              <h3>Strengths</h3>
+              <ul className="precheck-list">
+                {Array.isArray(finalReport.strengths) && finalReport.strengths.map((item, index) => (
+                  <li key={`strength-${index}`}>
+                    <span className="material-symbols-outlined">check_circle</span>
+                    <div>
+                      <p>{item}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+
+              <h3>Weaknesses</h3>
+              <ul className="precheck-list">
+                {Array.isArray(finalReport.weaknesses) && finalReport.weaknesses.map((item, index) => (
+                  <li key={`weakness-${index}`}>
+                    <span className="material-symbols-outlined">warning</span>
+                    <div>
+                      <p>{item}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+
+              <h3>Question Breakdown</h3>
+              <ul className="precheck-list">
+                {Array.isArray(finalReport.breakdown) && finalReport.breakdown.map((item) => (
+                  <li key={item.questionId}>
+                    <span className="material-symbols-outlined">quiz</span>
+                    <div>
+                      <h3>{item.question}</h3>
+                      <p>Score: {item.finalScore ?? item.score}</p>
+                      <p>{item.feedback || 'Feedback unavailable.'}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <button
+            type="button"
+            className="btn-primary-sm"
+            onClick={() => {
+              window.location.hash = '/'
+            }}
+          >
+            Back to Home
+          </button>
         </section>
       </div>
     )

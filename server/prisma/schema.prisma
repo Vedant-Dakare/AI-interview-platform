@@ -89,7 +89,10 @@ model Answer {
   answerText      String   @map("answer_text")
   embeddingVector Json?    @map("embedding_vector")
   similarityScore Float?   @map("similarity_score")
+  llmScore        Float?   @map("llm_score")
+  finalScore      Float?   @map("final_score")
   score           Float?
+  feedback        String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

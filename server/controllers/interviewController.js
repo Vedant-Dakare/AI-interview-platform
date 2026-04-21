@@ -1,8 +1,45 @@
 import asyncHandler from '../middleware/asyncHandler.js'
 import prisma from '../prisma/client.js'
-import { scoreAnswer } from '../services/embeddingService.js'
+import { evaluateInterviewAnswer, summarizeInterviewPerformance } from '../services/interviewEvaluationService.js'
 import { getRoleQuestionsOrFail, normalizeRole } from '../services/questionBankService.js'
+import { transcribeAudio } from '../services/transcriptionService.js'
 import { synthesizeSpeech } from '../services/ttsService.js'
+
+let cachedAnswerColumns = null
+
+async function getAnswerColumns() {
+  if (cachedAnswerColumns) {
+    return cachedAnswerColumns
+  }
+
+  const rows = await prisma.$queryRaw`
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'Answer'
+  `
+
+  cachedAnswerColumns = new Set(rows.map((row) => row.column_name))
+  return cachedAnswerColumns
+}
+
+async function getAnswerSelectShape() {
+  const columns = await getAnswerColumns()
+
+  return {
+    id: true,
+    interviewId: true,
+    questionId: true,
+    answerText: true,
+    embeddingVector: true,
+    similarityScore: true,
+    score: true,
+    createdAt: true,
+    updatedAt: true,
+    ...(columns.has('llm_score') ? { llmScore: true } : {}),
+    ...(columns.has('final_score') ? { finalScore: true } : {}),
+    ...(columns.has('feedback') ? { feedback: true } : {}),
+  }
+}
 
 function parseInterviewId(interviewId) {
   const parsedId = Number(interviewId)
@@ -30,7 +67,9 @@ function mapQuestionsAndAnswers(questions) {
       question: question.questionText,
       answer: question.answer.answerText,
       similarityScore: question.answer.similarityScore,
-      score: question.answer.score,
+      llmScore: question.answer.llmScore,
+      score: question.answer.finalScore ?? question.answer.score,
+      feedback: question.answer.feedback,
     }))
 
   return {
@@ -41,6 +80,7 @@ function mapQuestionsAndAnswers(questions) {
 
 async function getOwnedInterviewOrFail(interviewId, userId) {
   const parsedInterviewId = parseInterviewId(interviewId)
+  const answerSelect = await getAnswerSelectShape()
 
   const interview = await prisma.interview.findFirst({
     where: {
@@ -53,7 +93,9 @@ async function getOwnedInterviewOrFail(interviewId, userId) {
           orderIndex: 'asc',
         },
         include: {
-          answer: true,
+          answer: {
+            select: answerSelect,
+          },
           roleQuestion: true,
         },
       },
@@ -157,6 +199,28 @@ const synthesizeInterviewSpeech = asyncHandler(async (req, res) => {
   res.status(200).send(buffer)
 })
 
+const transcribeInterviewAudio = asyncHandler(async (req, res) => {
+  if (!req.file) {
+    res.status(400)
+    throw new Error('audio file is required')
+  }
+
+  const { transcript, confidence, provider } = await transcribeAudio({
+    buffer: req.file.buffer,
+    filename: req.file.originalname || 'answer.webm',
+    mimetype: req.file.mimetype || 'audio/webm',
+  })
+
+  res.status(200).json({
+    success: true,
+    data: {
+      transcript,
+      confidence,
+      provider,
+    },
+  })
+})
+
 const getInterviewById = asyncHandler(async (req, res) => {
   const interview = await getOwnedInterviewOrFail(req.params.id, req.user.id)
   const { questions, answers } = mapQuestionsAndAnswers(interview.questions)
@@ -179,53 +243,107 @@ const getInterviewById = asyncHandler(async (req, res) => {
 
 async function saveInterviewAnswer(interview, question, answerText) {
   const trimmedAnswer = answerText.trim()
-  const idealAnswerText =
-    question.roleQuestion?.idealAnswer ||
-    `A strong answer should explain the core concepts in: ${question.questionText}`
-  const { answerEmbedding, similarityScore, score } = scoreAnswer(trimmedAnswer, idealAnswerText)
+
+  if (question.answer) {
+    const error = new Error('Answer already submitted for this question')
+    error.statusCode = 409
+    throw error
+  }
+
+  const idealAnswerText = question.roleQuestion?.idealAnswer || question.questionText
+  const expectedConcepts = idealAnswerText
+    .split(/[,.;]/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 4)
+    .slice(0, 8)
+
+  const {
+    answerEmbedding,
+    similarityScore,
+    llmScore,
+    finalScore,
+    feedback,
+  } = await evaluateInterviewAnswer({
+    questionText: question.questionText,
+    expectedAnswerText: idealAnswerText,
+    expectedConcepts,
+    candidateAnswerText: trimmedAnswer,
+  })
 
   const hasNextQuestion = interview.currentQuestionIndex < interview.questions.length - 1
   const nextQuestionIndex = hasNextQuestion ? interview.currentQuestionIndex + 1 : interview.currentQuestionIndex
   const nextStatus = interview.status === 'started' ? 'in-progress' : interview.status
 
-  await prisma.$transaction(async (tx) => {
-    await tx.answer.upsert({
-      where: {
-        questionId: question.id,
-      },
-      update: {
-        answerText: trimmedAnswer,
-        embeddingVector: answerEmbedding,
-        similarityScore,
-        score,
-      },
-      create: {
-        interviewId: interview.id,
-        questionId: question.id,
-        answerText: trimmedAnswer,
-        embeddingVector: answerEmbedding,
-        similarityScore,
-        score,
-      },
-    })
+  try {
+    await prisma.$transaction(async (tx) => {
+      try {
+        await tx.answer.create({
+          data: {
+            interviewId: interview.id,
+            questionId: question.id,
+            answerText: trimmedAnswer,
+            embeddingVector: answerEmbedding,
+            similarityScore,
+            llmScore,
+            finalScore,
+            score: finalScore,
+            feedback,
+          },
+        })
+      } catch (error) {
+        const message = String(error?.message || '')
+        const hasNewFieldValidationError =
+          message.includes('Unknown argument `llmScore`') ||
+          message.includes('Unknown argument `finalScore`') ||
+          message.includes('Unknown argument `feedback`') ||
+          message.includes('column `Answer.llm_score` does not exist') ||
+          message.includes('column `Answer.final_score` does not exist') ||
+          message.includes('column `Answer.feedback` does not exist')
 
-    await tx.interview.update({
-      where: {
-        id: interview.id,
-      },
-      data: {
-        status: nextStatus,
-        currentQuestionIndex: nextQuestionIndex,
-      },
+        if (!hasNewFieldValidationError) {
+          throw error
+        }
+
+        await tx.answer.create({
+          data: {
+            interviewId: interview.id,
+            questionId: question.id,
+            answerText: trimmedAnswer,
+            embeddingVector: answerEmbedding,
+            similarityScore,
+            score: finalScore,
+          },
+        })
+      }
+
+      await tx.interview.update({
+        where: {
+          id: interview.id,
+        },
+        data: {
+          status: nextStatus,
+          currentQuestionIndex: nextQuestionIndex,
+        },
+      })
     })
-  })
+  } catch (error) {
+    if (error?.code === 'P2002') {
+      const conflictError = new Error('Answer already submitted for this question')
+      conflictError.statusCode = 409
+      throw conflictError
+    }
+
+    throw error
+  }
 
   return {
     hasNextQuestion,
     nextQuestionIndex,
     nextStatus,
     similarityScore,
-    score,
+    llmScore,
+    finalScore,
+    feedback,
     savedAnswer: trimmedAnswer,
   }
 }
@@ -257,6 +375,11 @@ const submitAnswerByPayload = asyncHandler(async (req, res) => {
     throw new Error('Interview is already completed')
   }
 
+  if (interview.status === 'terminated') {
+    res.status(400)
+    throw new Error('Interview has been terminated')
+  }
+
   const question = interview.questions[interview.currentQuestionIndex]
   if (!question) {
     res.status(400)
@@ -281,7 +404,10 @@ const submitAnswerByPayload = asyncHandler(async (req, res) => {
         ? interview.questions[result.nextQuestionIndex]?.questionText || null
         : null,
       similarityScore: result.similarityScore,
-      score: result.score,
+      llmScore: result.llmScore,
+      finalScore: result.finalScore,
+      score: result.finalScore,
+      feedback: result.feedback,
       savedAnswer: result.savedAnswer,
       status: result.nextStatus,
     },
@@ -308,6 +434,11 @@ const submitAnswer = asyncHandler(async (req, res) => {
     throw new Error('Interview is already completed')
   }
 
+  if (interview.status === 'terminated') {
+    res.status(400)
+    throw new Error('Interview has been terminated')
+  }
+
   const question = interview.questions[interview.currentQuestionIndex]
   if (!question) {
     res.status(400)
@@ -325,8 +456,57 @@ const submitAnswer = asyncHandler(async (req, res) => {
       question: question.questionText,
       savedAnswer: result.savedAnswer,
       similarityScore: result.similarityScore,
-      score: result.score,
+      llmScore: result.llmScore,
+      finalScore: result.finalScore,
+      score: result.finalScore,
+      feedback: result.feedback,
       status: result.nextStatus,
+    },
+  })
+})
+
+const getInterviewReport = asyncHandler(async (req, res) => {
+  const interviewId = parseInterviewId(req.query?.interviewId)
+  const interview = await getOwnedInterviewOrFail(interviewId, req.user.id)
+  const answerSelect = await getAnswerSelectShape()
+
+  const answers = await prisma.answer.findMany({
+    where: {
+      interviewId: interview.id,
+    },
+    orderBy: {
+      question: {
+        orderIndex: 'asc',
+      },
+    },
+    select: {
+      ...answerSelect,
+      question: true,
+    },
+  })
+
+  const totalScore = Number(answers.reduce((sum, item) => sum + Number(item.finalScore ?? item.score ?? 0), 0).toFixed(2))
+  const averageScore = answers.length ? Number((totalScore / answers.length).toFixed(2)) : 0
+  const summary = await summarizeInterviewPerformance(answers)
+
+  res.status(200).json({
+    success: true,
+    data: {
+      interviewId: interview.id,
+      overallScore: totalScore,
+      averageScore,
+      strengths: summary.strengths,
+      weaknesses: summary.weaknesses,
+      recommendation: summary.recommendation,
+      breakdown: answers.map((item) => ({
+        questionId: item.questionId,
+        question: item.question?.questionText || '',
+        answerText: item.answerText,
+        similarityScore: item.similarityScore,
+        llmScore: item.llmScore,
+        finalScore: item.finalScore ?? item.score,
+        feedback: item.feedback,
+      })),
     },
   })
 })
@@ -463,10 +643,12 @@ export {
   startInterview,
   getQuestionsByRole,
   synthesizeInterviewSpeech,
+  transcribeInterviewAudio,
   getInterviewById,
   submitAnswerByPayload,
   submitAnswer,
   moveToNextQuestion,
   endInterview,
   endInterviewByPayload,
+  getInterviewReport,
 }

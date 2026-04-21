@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { endInterviewById, submitInterviewAnswer, synthesizeInterviewSpeech } from '../../services/interviewApi'
+import { endInterviewById, submitInterviewAnswer, synthesizeInterviewSpeech, transcribeInterviewAudio } from '../../services/interviewApi'
 
 function VisualBars({ large = false }) {
   if (large) {
@@ -105,6 +105,7 @@ function InterviewWorkspace({
   const [isAnswered, setIsAnswered] = useState(false)
   const [error, setError] = useState('')
   const [voiceState, setVoiceState] = useState('idle')
+  const [isTranscribing, setIsTranscribing] = useState(false)
 
   const recognitionRef = useRef(null)
   const noSpeechTimerRef = useRef(null)
@@ -115,6 +116,9 @@ function InterviewWorkspace({
   const latestAnswerRef = useRef('')
   const isSubmittingRef = useRef(false)
   const listeningSessionRef = useRef(0)
+  const mediaRecorderRef = useRef(null)
+  const recordingChunksRef = useRef([])
+  const recordingStreamRef = useRef(null)
 
   const supportsSpeechRecognition = useMemo(() => Boolean(getSpeechRecognition()), [])
 
@@ -143,6 +147,149 @@ function InterviewWorkspace({
       }
 
       recognitionRef.current = null
+    }
+  }
+
+  function stopAudioStreamTracks(stream = recordingStreamRef.current) {
+    if (!stream) {
+      return
+    }
+
+    stream.getTracks().forEach((track) => {
+      track.stop()
+    })
+
+    if (recordingStreamRef.current === stream) {
+      recordingStreamRef.current = null
+    }
+  }
+
+  async function startAudioRecording() {
+    if (!navigator?.mediaDevices?.getUserMedia || typeof window.MediaRecorder === 'undefined') {
+      return false
+    }
+
+    if (mediaRecorderRef.current) {
+      return true
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    recordingStreamRef.current = stream
+
+    const supportedType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/wav'].find((mimeType) =>
+      window.MediaRecorder.isTypeSupported?.(mimeType)
+    )
+
+    const recorder = supportedType ? new MediaRecorder(stream, { mimeType: supportedType }) : new MediaRecorder(stream)
+    recordingChunksRef.current = []
+
+    recorder.ondataavailable = (event) => {
+      if (event.data?.size) {
+        recordingChunksRef.current.push(event.data)
+      }
+    }
+
+    recorder.start(250)
+    mediaRecorderRef.current = recorder
+    return true
+  }
+
+  async function stopAudioRecording() {
+    const recorder = mediaRecorderRef.current
+    const recorderStream = recordingStreamRef.current
+
+    if (!recorder) {
+      stopAudioStreamTracks(recorderStream)
+      return null
+    }
+
+    return new Promise((resolve) => {
+      const finalize = () => {
+        const mimeType = recorder.mimeType || recordingChunksRef.current[0]?.type || 'audio/webm'
+        const blob = recordingChunksRef.current.length
+          ? new Blob(recordingChunksRef.current, { type: mimeType })
+          : null
+
+        mediaRecorderRef.current = null
+        recordingChunksRef.current = []
+        stopAudioStreamTracks(recorderStream)
+        resolve(blob)
+      }
+
+      recorder.onstop = finalize
+
+      if (recorder.state === 'inactive') {
+        finalize()
+        return
+      }
+
+      try {
+        recorder.stop()
+      } catch {
+        finalize()
+      }
+    })
+  }
+
+  async function transcribeWithRetry(audioBlob, maxAttempts = 2) {
+    let lastError = null
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const extension = audioBlob.type.includes('wav') ? 'wav' : 'webm'
+        const response = await transcribeInterviewAudio(audioBlob, `answer-${Date.now()}.${extension}`)
+        return String(response?.data?.transcript || '').trim()
+      } catch (error) {
+        lastError = error
+      }
+    }
+
+    throw lastError || new Error('Transcription failed')
+  }
+
+  async function resolveTranscriptFromRecording(fallbackTranscript = '') {
+    const audioBlob = await stopAudioRecording()
+    const normalizedFallback = String(fallbackTranscript || '').trim()
+
+    if (audioBlob && audioBlob.size > 0) {
+      try {
+        const transcript = await transcribeWithRetry(audioBlob)
+        if (transcript) {
+          return transcript
+        }
+      } catch {
+        if (normalizedFallback) {
+          return normalizedFallback
+        }
+        throw new Error('Transcription failed')
+      }
+    }
+
+    return normalizedFallback
+  }
+
+  async function processCapturedAnswer(fallbackTranscript = '') {
+    setVoiceState('processing')
+    setIsTranscribing(true)
+
+    try {
+      const transcript = await resolveTranscriptFromRecording(fallbackTranscript)
+
+      if (!transcript || isSubmittingRef.current) {
+        if (!isSubmittingRef.current) {
+          setVoiceState('idle')
+          setError('No response detected. Click Retry Listening or type your answer.')
+        }
+        return
+      }
+
+      setAnswer(transcript)
+      await handleSubmitAnswer(transcript)
+    } catch {
+      setVoiceState('idle')
+      setError('Transcription failed. Please click Retry Listening and try again.')
+    } finally {
+      setIsTranscribing(false)
     }
   }
 
@@ -236,17 +383,38 @@ function InterviewWorkspace({
   }
 
   function startListening() {
-    if (!supportsSpeechRecognition) {
-      setError('Speech recognition is not supported in this browser. You can still type your answer.')
-      setVoiceState('idle')
-      return
-    }
-
     setError('')
     stopListening()
+    void stopAudioRecording()
     const activeSessionId = listeningSessionRef.current + 1
     listeningSessionRef.current = activeSessionId
     setVoiceState('listening')
+
+    if (!supportsSpeechRecognition) {
+      startAudioRecording()
+        .then((started) => {
+          if (!started) {
+            setVoiceState('idle')
+            setError('Voice input is not supported in this browser. Please type your answer.')
+            return
+          }
+
+          noSpeechTimerRef.current = window.setTimeout(() => {
+            if (activeSessionId !== listeningSessionRef.current) {
+              return
+            }
+
+            stopListening()
+            void processCapturedAnswer('')
+          }, 12000)
+        })
+        .catch(() => {
+          setVoiceState('idle')
+          setError('Microphone permission is required for voice input. Please allow microphone and retry.')
+        })
+
+      return
+    }
 
     const SpeechRecognition = getSpeechRecognition()
     const recognition = new SpeechRecognition()
@@ -296,17 +464,7 @@ function InterviewWorkspace({
       }
 
       clearNoSpeechTimer()
-
-      const transcript = finalTranscript.trim() || lastCapturedTranscript.trim()
-      if (!transcript || isSubmittingRef.current) {
-        if (!isSubmittingRef.current) {
-          setVoiceState('idle')
-          setError('No response detected. Click Retry Listening or type your answer.')
-        }
-        return
-      }
-
-      handleSubmitAnswer(transcript)
+      void processCapturedAnswer(finalTranscript.trim() || lastCapturedTranscript.trim())
     }
 
     recognitionRef.current = recognition
@@ -331,10 +489,13 @@ function InterviewWorkspace({
 
       if (!finalTranscript.trim() && !lastCapturedTranscript.trim()) {
         stopListening()
-        setVoiceState('idle')
-        setError('No response detected. Click Retry Listening or type your answer.')
+        void processCapturedAnswer('')
       }
     }, 12000)
+
+    startAudioRecording().catch(() => {
+      // Speech recognition continues even if MediaRecorder is unavailable.
+    })
   }
 
   async function runQuestionFlow() {
@@ -375,6 +536,7 @@ function InterviewWorkspace({
     }
 
     stopListening()
+    await stopAudioRecording()
     cancelSpeech()
     setIsSubmitting(true)
     isSubmittingRef.current = true
@@ -426,6 +588,17 @@ function InterviewWorkspace({
     }
   }
 
+  async function handleSubmitClick() {
+    if (voiceState === 'listening' && !isSubmittingRef.current) {
+      setError('')
+      stopListening()
+      await processCapturedAnswer(latestAnswerRef.current)
+      return
+    }
+
+    await handleSubmitAnswer()
+  }
+
   useEffect(() => {
     latestAnswerRef.current = answer
   }, [answer])
@@ -452,6 +625,7 @@ function InterviewWorkspace({
     return () => {
       window.speechSynthesis.removeEventListener('voiceschanged', primeVoices)
       stopListening()
+      void stopAudioRecording()
       cancelSpeech()
     }
   }, [])
@@ -506,21 +680,21 @@ function InterviewWorkspace({
                 placeholder="Type your answer here..."
                 value={answer}
                 onChange={(e) => setAnswer(e.target.value)}
-                disabled={isSubmitting || voiceState === 'speaking'}
+                disabled={isSubmitting || isTranscribing || voiceState === 'speaking'}
                 rows={6}
               />
               {error && <div className="answer-error">{error}</div>}
               <button
                 className="submit-answer-btn"
-                onClick={() => handleSubmitAnswer()}
-                disabled={isSubmitting || !answer.trim() || !question?.id}
+                onClick={handleSubmitClick}
+                disabled={isSubmitting || isTranscribing || (!answer.trim() && voiceState !== 'listening') || !question?.id}
               >
-                {isSubmitting ? 'Submitting...' : 'Submit Answer'}
+                {isSubmitting || isTranscribing ? 'Processing...' : 'Submit Answer'}
               </button>
               <button
                 className="next-question-btn"
                 onClick={handleRetryListening}
-                disabled={isSubmitting || voiceState === 'speaking'}
+                disabled={isSubmitting || isTranscribing || voiceState === 'speaking'}
               >
                 Retry Listening
               </button>

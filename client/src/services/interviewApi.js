@@ -60,6 +60,30 @@ async function requestBinaryWithAuth(path, method = 'GET', body = null) {
   return response.blob()
 }
 
+async function requestFormDataWithAuth(path, formData) {
+  const token = getAuthToken()
+
+  if (!token) {
+    throw new Error('Please sign in to continue')
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: formData,
+  })
+
+  const data = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    throw new Error(data.message || 'Interview request failed')
+  }
+
+  return data
+}
+
 export async function startInterview(role, candidateName) {
   return requestWithAuth('/api/interview/start', 'POST', { role, candidateName })
 }
@@ -98,4 +122,14 @@ export async function endInterviewById(interviewId) {
 
 export async function synthesizeInterviewSpeech(text) {
   return requestBinaryWithAuth('/api/interview/tts', 'POST', { text })
+}
+
+export async function transcribeInterviewAudio(audioBlob, filename = 'answer.webm') {
+  const formData = new FormData()
+  formData.append('audio', audioBlob, filename)
+  return requestFormDataWithAuth('/api/interview/transcribe', formData)
+}
+
+export async function getInterviewReport(interviewId) {
+  return requestWithAuth(`/api/interview/report?interviewId=${encodeURIComponent(interviewId)}`, 'GET')
 }
