@@ -16,26 +16,30 @@ async function generateEmbedding(text) {
     return buildEmbeddingVector(normalizedText)
   }
 
-  const model = process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small'
-  const response = await callOpenAI('/embeddings', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      input: normalizedText,
-    }),
-  })
+  try {
+    const model = process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small'
+    const response = await callOpenAI('/embeddings', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        input: normalizedText,
+      }),
+    })
 
-  const data = await response.json().catch(() => ({}))
-  const embedding = data?.data?.[0]?.embedding
+    const data = await response.json().catch(() => ({}))
+    const embedding = data?.data?.[0]?.embedding
 
-  if (!Array.isArray(embedding) || !embedding.length) {
+    if (!Array.isArray(embedding) || !embedding.length) {
+      return buildEmbeddingVector(normalizedText)
+    }
+
+    return embedding.map((value) => Number(value) || 0)
+  } catch {
     return buildEmbeddingVector(normalizedText)
   }
-
-  return embedding.map((value) => Number(value) || 0)
 }
 
 function evaluateByConceptCoverage(questionText, answerText, expectedConcepts = []) {
@@ -70,50 +74,54 @@ async function evaluateWithLLM(questionText, answerText, expectedConcepts = []) 
     return evaluateByConceptCoverage(questionText, answerText, expectedConcepts)
   }
 
-  const model = process.env.OPENAI_EVAL_MODEL || 'gpt-4.1-mini'
-  const prompt = [
-    'Evaluate the candidate answer for correctness, depth, and clarity.',
-    'Return strict JSON only with keys: score, feedback.',
-    'score must be a number in range 0-10.',
-    'feedback must be a short 2-3 line string.',
-    '',
-    `Question: ${questionText}`,
-    `Expected Concepts: ${expectedConcepts.join(', ') || 'None provided'}`,
-    `Candidate Answer: ${answerText}`,
-  ].join('\n')
+  try {
+    const model = process.env.OPENAI_EVAL_MODEL || 'gpt-4.1-mini'
+    const prompt = [
+      'Evaluate the candidate answer for correctness, depth, and clarity.',
+      'Return strict JSON only with keys: score, feedback.',
+      'score must be a number in range 0-10.',
+      'feedback must be a short 2-3 line string.',
+      '',
+      `Question: ${questionText}`,
+      `Expected Concepts: ${expectedConcepts.join(', ') || 'None provided'}`,
+      `Candidate Answer: ${answerText}`,
+    ].join('\n')
 
-  const response = await callOpenAI('/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0,
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a strict interview evaluator. Output JSON only.',
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-    }),
-  })
+    const response = await callOpenAI('/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a strict interview evaluator. Output JSON only.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+      }),
+    })
 
-  const data = await response.json().catch(() => ({}))
-  const content = data?.choices?.[0]?.message?.content || ''
-  const parsed = extractJsonObject(content) || {}
-  const score = Number(parsed.score)
-  const llmScore = Number.isFinite(score) ? Number(Math.max(0, Math.min(10, score)).toFixed(2)) : 0
-  const feedback = String(parsed.feedback || 'No feedback available').trim()
+    const data = await response.json().catch(() => ({}))
+    const content = data?.choices?.[0]?.message?.content || ''
+    const parsed = extractJsonObject(content) || {}
+    const score = Number(parsed.score)
+    const llmScore = Number.isFinite(score) ? Number(Math.max(0, Math.min(10, score)).toFixed(2)) : 0
+    const feedback = String(parsed.feedback || 'No feedback available').trim()
 
-  return {
-    llmScore,
-    feedback,
-    provider: 'openai',
+    return {
+      llmScore,
+      feedback,
+      provider: 'openai',
+    }
+  } catch {
+    return evaluateByConceptCoverage(questionText, answerText, expectedConcepts)
   }
 }
 
@@ -184,60 +192,64 @@ async function summarizeInterviewPerformance(answerRows) {
     return buildDeterministicSummary(answerRows)
   }
 
-  const model = process.env.OPENAI_REPORT_MODEL || process.env.OPENAI_EVAL_MODEL || 'gpt-4.1-mini'
-  const compactAnswers = answerRows.map((row) => ({
-    question: row?.question?.questionText || '',
-    answerText: row?.answerText || '',
-    finalScore: Number(row?.finalScore ?? row?.score ?? 0),
-    feedback: row?.feedback || '',
-  }))
+  try {
+    const model = process.env.OPENAI_REPORT_MODEL || process.env.OPENAI_EVAL_MODEL || 'gpt-4.1-mini'
+    const compactAnswers = answerRows.map((row) => ({
+      question: row?.question?.questionText || '',
+      answerText: row?.answerText || '',
+      finalScore: Number(row?.finalScore ?? row?.score ?? 0),
+      feedback: row?.feedback || '',
+    }))
 
-  const prompt = [
-    'Based on the following interview answers, return strict JSON with keys:',
-    'strengths (array of strings), weaknesses (array of strings), recommendation (SHORTLIST or REJECT).',
-    'Keep output concise and role-appropriate.',
-    '',
-    JSON.stringify(compactAnswers),
-  ].join('\n')
+    const prompt = [
+      'Based on the following interview answers, return strict JSON with keys:',
+      'strengths (array of strings), weaknesses (array of strings), recommendation (SHORTLIST or REJECT).',
+      'Keep output concise and role-appropriate.',
+      '',
+      JSON.stringify(compactAnswers),
+    ].join('\n')
 
-  const response = await callOpenAI('/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0,
-      messages: [
-        {
-          role: 'system',
-          content: 'You generate structured interview summaries in JSON.',
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-    }),
-  })
+    const response = await callOpenAI('/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0,
+        messages: [
+          {
+            role: 'system',
+            content: 'You generate structured interview summaries in JSON.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+      }),
+    })
 
-  const data = await response.json().catch(() => ({}))
-  const content = data?.choices?.[0]?.message?.content || ''
-  const parsed = extractJsonObject(content)
+    const data = await response.json().catch(() => ({}))
+    const content = data?.choices?.[0]?.message?.content || ''
+    const parsed = extractJsonObject(content)
 
-  if (!parsed) {
+    if (!parsed) {
+      return buildDeterministicSummary(answerRows)
+    }
+
+    const strengths = Array.isArray(parsed.strengths) ? parsed.strengths.map((value) => String(value || '').trim()).filter(Boolean) : []
+    const weaknesses = Array.isArray(parsed.weaknesses) ? parsed.weaknesses.map((value) => String(value || '').trim()).filter(Boolean) : []
+    const recommendationRaw = String(parsed.recommendation || '').trim().toUpperCase()
+
+    return {
+      strengths: strengths.length ? strengths : ['Consistent effort shown during interview.'],
+      weaknesses: weaknesses.length ? weaknesses : ['Provide deeper technical examples.'],
+      recommendation: recommendationRaw === 'SHORTLIST' ? 'SHORTLIST' : 'REJECT',
+      provider: 'openai',
+    }
+  } catch {
     return buildDeterministicSummary(answerRows)
-  }
-
-  const strengths = Array.isArray(parsed.strengths) ? parsed.strengths.map((value) => String(value || '').trim()).filter(Boolean) : []
-  const weaknesses = Array.isArray(parsed.weaknesses) ? parsed.weaknesses.map((value) => String(value || '').trim()).filter(Boolean) : []
-  const recommendationRaw = String(parsed.recommendation || '').trim().toUpperCase()
-
-  return {
-    strengths: strengths.length ? strengths : ['Consistent effort shown during interview.'],
-    weaknesses: weaknesses.length ? weaknesses : ['Provide deeper technical examples.'],
-    recommendation: recommendationRaw === 'SHORTLIST' ? 'SHORTLIST' : 'REJECT',
-    provider: 'openai',
   }
 }
 
