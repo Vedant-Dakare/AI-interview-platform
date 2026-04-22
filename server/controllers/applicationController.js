@@ -65,7 +65,7 @@ const applyForInterview = asyncHandler(async (req, res) => {
       fullName: fullName.trim(),
       email: normalizedEmail,
       role: normalizedRole,
-      resumeFileUrl: req.file.path.replace(/\\/g, '/'),
+      resumeFileUrl: `/uploads/resumes/${req.file.filename}`,
       resumeInsights: extractedText || null,
       applicationStatus: 'submitted',
     },

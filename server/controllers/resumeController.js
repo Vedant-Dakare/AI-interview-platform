@@ -23,7 +23,7 @@ const uploadResume = asyncHandler(async (req, res) => {
   const resume = await prisma.resume.create({
     data: {
       userId: req.user.id,
-      fileUrl: req.file.path.replace(/\\/g, '/'),
+      fileUrl: `/uploads/resumes/${req.file.filename}`,
       extractedText,
     },
   })
