@@ -1,9 +1,13 @@
 import fs from 'fs/promises'
 import path from 'path'
+import { fileURLToPath } from 'url'
 import pdfParse from 'pdf-parse'
 import asyncHandler from '../middleware/asyncHandler.js'
 import prisma from '../prisma/client.js'
 import { createInterviewInvite, normalizeRole } from '../services/interviewInviteService.js'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
@@ -55,17 +59,31 @@ const applyForInterview = asyncHandler(async (req, res) => {
     throw new Error('An active interview link already exists for this email and role')
   }
 
-  const absolutePath = path.resolve(req.file.path)
-  const fileBuffer = await fs.readFile(absolutePath)
+  const fileBuffer = req.file.buffer
+  if (!fileBuffer) {
+    res.status(400)
+    throw new Error('Resume upload failed. Please retry.')
+  }
+
   const parsedPdf = await pdfParse(fileBuffer)
   const extractedText = (parsedPdf.text || '').trim()
+
+  const originalName = req.file.originalname || 'resume.pdf'
+  const safeBase = originalName
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9.-]/g, '')
+  const safeFilename = `${Date.now()}-${safeBase || 'resume.pdf'}`
+  const uploadDir = path.join(__dirname, '..', 'uploads', 'resumes')
+  await fs.mkdir(uploadDir, { recursive: true })
+  await fs.writeFile(path.join(uploadDir, safeFilename), fileBuffer)
 
   const candidate = await prisma.candidate.create({
     data: {
       fullName: fullName.trim(),
       email: normalizedEmail,
       role: normalizedRole,
-      resumeFileUrl: `/uploads/resumes/${req.file.filename}`,
+      resumeFileUrl: `/uploads/resumes/${safeFilename}`,
       resumeInsights: extractedText || null,
       applicationStatus: 'submitted',
     },

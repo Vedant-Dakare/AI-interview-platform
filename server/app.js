@@ -21,6 +21,34 @@ const app = express()
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
+const alwaysAllowedOrigins = ['https://ai-interview-platform-sigma-ecru.vercel.app']
+const configuredOrigins = (process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map((origin) => origin.trim().replace(/\/$/, ''))
+  .filter(Boolean)
+const allowedOrigins = Array.from(new Set([...configuredOrigins, ...alwaysAllowedOrigins]))
+
+const corsOptions = {
+  origin(origin, callback) {
+    // Allow non-browser clients (no Origin header), e.g. curl/postman/health checks.
+    if (!origin) {
+      callback(null, true)
+      return
+    }
+
+    const normalizedOrigin = origin.replace(/\/$/, '')
+    if (allowedOrigins.includes(normalizedOrigin)) {
+      callback(null, true)
+      return
+    }
+
+    callback(new Error('Not allowed by CORS'))
+  },
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-admin-api-key'],
+  optionsSuccessStatus: 204,
+}
+
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: Number(process.env.AUTH_RATE_LIMIT_MAX || 100),
@@ -33,7 +61,8 @@ const authLimiter = rateLimit({
 })
 
 app.use(helmet())
-app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',') || '*' }))
+app.use(cors(corsOptions))
+app.options('*', cors(corsOptions))
 app.use(compression())
 app.use(express.json({ limit: '1mb' }))
 app.use(express.urlencoded({ extended: true }))

@@ -1,28 +1,7 @@
 import path from 'path'
-import { fileURLToPath } from 'url'
-import fs from 'fs'
 import multer from 'multer'
 
 const maxFileSizeMb = Number(process.env.MAX_FILE_SIZE_MB || 5)
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-
-const storage = multer.diskStorage({
-  destination(req, file, cb) {
-    const uploadDir = path.join(__dirname, '..', 'uploads', 'resumes')
-    // Ensure upload directory exists in fresh deploy environments.
-    fs.mkdirSync(uploadDir, { recursive: true })
-    cb(null, uploadDir)
-  },
-  filename(req, file, cb) {
-    const safeBase = file.originalname
-      .toLowerCase()
-      .replace(/\s+/g, '-')
-      .replace(/[^a-z0-9.-]/g, '')
-
-    cb(null, `${Date.now()}-${safeBase}`)
-  },
-})
 
 function fileFilter(req, file, cb) {
   const isPdfMime = file.mimetype === 'application/pdf'
@@ -37,7 +16,7 @@ function fileFilter(req, file, cb) {
 }
 
 const uploadResume = multer({
-  storage,
+  storage: multer.memoryStorage(),
   fileFilter,
   limits: {
     fileSize: maxFileSizeMb * 1024 * 1024,
