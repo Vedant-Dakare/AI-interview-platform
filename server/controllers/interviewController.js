@@ -119,6 +119,27 @@ const startInterview = asyncHandler(async (req, res) => {
     throw new Error('role must be one of: backend, dsa, ml')
   }
 
+  const existingCompletedInterview = await prisma.interview.findFirst({
+    where: {
+      userId: req.user.id,
+      status: 'completed',
+    },
+    select: {
+      id: true,
+      role: true,
+      completedAt: true,
+      updatedAt: true,
+    },
+    orderBy: {
+      updatedAt: 'desc',
+    },
+  })
+
+  if (existingCompletedInterview) {
+    res.status(409)
+    throw new Error('You have already completed an interview and cannot start another one.')
+  }
+
   const { questions: roleQuestions } = await getRoleQuestionsOrFail(normalizedRole)
 
   const interview = await prisma.interview.create({

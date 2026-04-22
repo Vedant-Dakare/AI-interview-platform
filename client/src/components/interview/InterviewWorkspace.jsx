@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { endInterviewById, submitInterviewAnswer, synthesizeInterviewSpeech } from '../../services/interviewApi'
+import {
+  endInterviewById,
+  submitInterviewAnswer,
+  synthesizeInterviewSpeech,
+  transcribeInterviewAudio,
+} from '../../services/interviewApi'
 
 function VisualBars({ large = false }) {
   if (large) {
@@ -90,7 +95,8 @@ function normalizeSpeechText(text) {
     .trim()
 }
 
-  const LISTEN_TIMEOUT_MS = 20000
+const LISTEN_TIMEOUT_MS = 90000
+const SILENCE_AUTO_SUBMIT_MS = 3800
 
 function InterviewWorkspace({
   interviewId,
@@ -111,6 +117,7 @@ function InterviewWorkspace({
 
   const recognitionRef = useRef(null)
   const noSpeechTimerRef = useRef(null)
+  const silenceTimerRef = useRef(null)
   const hasSpokenIntroRef = useRef(false)
   const lastQuestionIdRef = useRef(null)
   const selectedVoiceRef = useRef(null)
@@ -133,6 +140,13 @@ function InterviewWorkspace({
     }
   }
 
+  function clearSilenceTimer() {
+    if (silenceTimerRef.current) {
+      window.clearTimeout(silenceTimerRef.current)
+      silenceTimerRef.current = null
+    }
+  }
+
   function resetTranscriptRefs() {
     finalTranscriptRef.current = ''
     latestTranscriptRef.current = ''
@@ -149,6 +163,7 @@ function InterviewWorkspace({
 
   function stopListening() {
     clearNoSpeechTimer()
+    clearSilenceTimer()
 
     if (recognitionRef.current) {
       try {
@@ -269,13 +284,28 @@ function InterviewWorkspace({
     setIsTranscribing(true)
 
     try {
-      await stopAudioRecording()
-      const transcript = String(fallbackTranscript || '').trim()
+      const recordedBlob = await stopAudioRecording()
+      const browserTranscript = normalizeSpeechText(fallbackTranscript)
+      let transcript = browserTranscript
+
+      if (recordedBlob?.size) {
+        try {
+          const extension = recordedBlob.type?.includes('wav') ? 'wav' : 'webm'
+          const response = await transcribeInterviewAudio(recordedBlob, `answer.${extension}`)
+          const transcribedText = normalizeSpeechText(response?.data?.transcript || '')
+
+          if (transcribedText && (!transcript || transcribedText.length >= Math.round(transcript.length * 0.8))) {
+            transcript = transcribedText
+          }
+        } catch {
+          // Keep browser transcript when server transcription is unavailable.
+        }
+      }
 
       if (!transcript || isSubmittingRef.current) {
         if (!isSubmittingRef.current) {
           setVoiceState('idle')
-          setError('No speech was captured. Use Chrome or Edge, click Retry Listening, then speak clearly.')
+          setError('No clear speech was captured. Click Retry Listening, then answer again with a short pause at the end.')
         }
         return
       }
@@ -459,6 +489,20 @@ function InterviewWorkspace({
       let finalTranscript = ''
       let lastCapturedTranscript = ''
       let hasResolvedRecognition = false
+      let restartCount = 0
+
+      const getCapturedTranscript = () => (finalTranscript.trim() || lastCapturedTranscript.trim())
+
+      const scheduleSilenceFinalize = () => {
+        clearSilenceTimer()
+        silenceTimerRef.current = window.setTimeout(() => {
+          if (activeSessionId !== listeningSessionRef.current || hasResolvedRecognition) {
+            return
+          }
+
+          processRecognitionResult(getCapturedTranscript())
+        }, SILENCE_AUTO_SUBMIT_MS)
+      }
 
       const processRecognitionResult = (fallbackTranscript = '') => {
         if (hasResolvedRecognition || activeSessionId !== listeningSessionRef.current) {
@@ -471,10 +515,10 @@ function InterviewWorkspace({
         void processCapturedAnswer(fallbackTranscript)
       }
 
-      recognition.lang = 'en-US'
+      recognition.lang = (navigator?.language || 'en-IN').startsWith('en') ? (navigator.language || 'en-IN') : 'en-IN'
       recognition.interimResults = true
-      recognition.continuous = false
-      recognition.maxAlternatives = 1
+      recognition.continuous = true
+      recognition.maxAlternatives = 3
 
       recognition.onstart = () => {
         if (activeSessionId !== listeningSessionRef.current) {
@@ -506,6 +550,7 @@ function InterviewWorkspace({
           finalTranscriptRef.current = finalTranscript.trim()
           latestTranscriptRef.current = combinedTranscript
           setAnswer(combinedTranscript)
+          scheduleSilenceFinalize()
         }
       }
 
@@ -534,7 +579,7 @@ function InterviewWorkspace({
           setError('Could not capture your voice clearly. Trying transcription from recording...')
         }
 
-        processRecognitionResult(finalTranscript.trim() || lastCapturedTranscript.trim())
+        processRecognitionResult(getCapturedTranscript())
       }
 
       recognition.onend = () => {
@@ -542,7 +587,27 @@ function InterviewWorkspace({
           return
         }
 
-        processRecognitionResult(finalTranscript.trim() || lastCapturedTranscript.trim())
+        if (hasResolvedRecognition) {
+          return
+        }
+
+        const capturedTranscript = getCapturedTranscript()
+        if (capturedTranscript) {
+          scheduleSilenceFinalize()
+          return
+        }
+
+        if (restartCount >= 3) {
+          processRecognitionResult('')
+          return
+        }
+
+        restartCount += 1
+        try {
+          recognition.start()
+        } catch {
+          processRecognitionResult('')
+        }
       }
 
       recognitionRef.current = recognition
@@ -565,10 +630,7 @@ function InterviewWorkspace({
           return
         }
 
-        if (!finalTranscript.trim() && !lastCapturedTranscript.trim()) {
-          stopListening()
-          void processCapturedAnswer('')
-        }
+        processRecognitionResult(getCapturedTranscript())
       }, LISTEN_TIMEOUT_MS)
 
       startAudioRecording().catch(() => {

@@ -32,6 +32,7 @@ function InterviewPage({ interviewContext }) {
   const [finalReport, setFinalReport] = useState(null)
   const [isLoadingReport, setIsLoadingReport] = useState(false)
   const [reportError, setReportError] = useState('')
+  const [redirectCountdown, setRedirectCountdown] = useState(10)
 
   // Cleanup on unmount
   useEffect(() => {
@@ -117,6 +118,30 @@ function InterviewPage({ interviewContext }) {
       })
   }, [interviewState.status, interviewState.interviewId])
 
+  useEffect(() => {
+    if (interviewState.status !== 'completed' || isLoadingReport) {
+      return
+    }
+
+    setRedirectCountdown(10)
+
+    const timer = window.setInterval(() => {
+      setRedirectCountdown((current) => {
+        if (current <= 1) {
+          window.clearInterval(timer)
+          window.location.hash = '/'
+          return 0
+        }
+
+        return current - 1
+      })
+    }, 1000)
+
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [interviewState.status, isLoadingReport])
+
   // Start interview on button click
   async function handleStartInterview() {
     if (!hasAcceptedChecklist) {
@@ -189,11 +214,13 @@ function InterviewPage({ interviewContext }) {
       }
     } catch (error) {
       console.error('[InterviewPage] Error starting interview:', error.message)
+      setHasStartedInterview(false)
       setInterviewState((prev) => ({
         ...prev,
-        status: 'error',
+        status: 'idle',
         error: error.message,
       }))
+      setPermissionError(error.message)
     }
   }
 
@@ -381,6 +408,12 @@ function InterviewPage({ interviewContext }) {
                 ))}
               </ul>
             </div>
+          )}
+
+          {!isLoadingReport && (
+            <p className="precheck-role-note">
+              Redirecting to home in <strong>{redirectCountdown}</strong> seconds...
+            </p>
           )}
 
           <button

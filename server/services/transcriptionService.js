@@ -25,6 +25,11 @@ async function transcribeAudio({ buffer, filename = 'answer.webm', mimetype = 'a
 
   formData.append('model', model)
   formData.append('response_format', 'verbose_json')
+  formData.append('language', process.env.OPENAI_TRANSCRIPTION_LANGUAGE || 'en')
+  formData.append(
+    'prompt',
+    'Technical interview response in English. Preserve programming terms, APIs, acronyms, and library names exactly.'
+  )
   formData.append('file', blob, filename)
 
   const response = await callOpenAI('/audio/transcriptions', {
