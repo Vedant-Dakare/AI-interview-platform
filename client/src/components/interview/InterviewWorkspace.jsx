@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { endInterviewById, submitInterviewAnswer, synthesizeInterviewSpeech, transcribeInterviewAudio } from '../../services/interviewApi'
+import { endInterviewById, submitInterviewAnswer, synthesizeInterviewSpeech } from '../../services/interviewApi'
 
 function VisualBars({ large = false }) {
   if (large) {
@@ -90,6 +90,8 @@ function normalizeSpeechText(text) {
     .trim()
 }
 
+  const LISTEN_TIMEOUT_MS = 20000
+
 function InterviewWorkspace({
   interviewId,
   candidateName,
@@ -113,12 +115,14 @@ function InterviewWorkspace({
   const lastQuestionIdRef = useRef(null)
   const selectedVoiceRef = useRef(null)
   const audioPlayerRef = useRef(null)
-  const latestAnswerRef = useRef('')
   const isSubmittingRef = useRef(false)
   const listeningSessionRef = useRef(0)
   const mediaRecorderRef = useRef(null)
   const recordingChunksRef = useRef([])
   const recordingStreamRef = useRef(null)
+  const hasMicAccessRef = useRef(false)
+  const finalTranscriptRef = useRef('')
+  const latestTranscriptRef = useRef('')
 
   const supportsSpeechRecognition = useMemo(() => Boolean(getSpeechRecognition()), [])
 
@@ -127,6 +131,20 @@ function InterviewWorkspace({
       window.clearTimeout(noSpeechTimerRef.current)
       noSpeechTimerRef.current = null
     }
+  }
+
+  function resetTranscriptRefs() {
+    finalTranscriptRef.current = ''
+    latestTranscriptRef.current = ''
+  }
+
+  function getLatestCapturedTranscript() {
+    const finalTranscript = String(finalTranscriptRef.current || '').trim()
+    if (finalTranscript) {
+      return finalTranscript
+    }
+
+    return String(latestTranscriptRef.current || '').trim()
   }
 
   function stopListening() {
@@ -162,6 +180,21 @@ function InterviewWorkspace({
     if (recordingStreamRef.current === stream) {
       recordingStreamRef.current = null
     }
+  }
+
+  async function ensureMicrophoneAccess() {
+    if (hasMicAccessRef.current) {
+      return true
+    }
+
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      return false
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    hasMicAccessRef.current = true
+    stopAudioStreamTracks(stream)
+    return true
   }
 
   async function startAudioRecording() {
@@ -231,63 +264,28 @@ function InterviewWorkspace({
     })
   }
 
-  async function transcribeWithRetry(audioBlob, maxAttempts = 2) {
-    let lastError = null
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      try {
-        const extension = audioBlob.type.includes('wav') ? 'wav' : 'webm'
-        const response = await transcribeInterviewAudio(audioBlob, `answer-${Date.now()}.${extension}`)
-        return String(response?.data?.transcript || '').trim()
-      } catch (error) {
-        lastError = error
-      }
-    }
-
-    throw lastError || new Error('Transcription failed')
-  }
-
-  async function resolveTranscriptFromRecording(fallbackTranscript = '') {
-    const audioBlob = await stopAudioRecording()
-    const normalizedFallback = String(fallbackTranscript || '').trim()
-
-    if (audioBlob && audioBlob.size > 0) {
-      try {
-        const transcript = await transcribeWithRetry(audioBlob)
-        if (transcript) {
-          return transcript
-        }
-      } catch {
-        if (normalizedFallback) {
-          return normalizedFallback
-        }
-        throw new Error('Transcription failed')
-      }
-    }
-
-    return normalizedFallback
-  }
-
   async function processCapturedAnswer(fallbackTranscript = '') {
     setVoiceState('processing')
     setIsTranscribing(true)
 
     try {
-      const transcript = await resolveTranscriptFromRecording(fallbackTranscript)
+      await stopAudioRecording()
+      const transcript = String(fallbackTranscript || '').trim()
 
       if (!transcript || isSubmittingRef.current) {
         if (!isSubmittingRef.current) {
           setVoiceState('idle')
-          setError('No response detected. Click Retry Listening or type your answer.')
+          setError('No speech was captured. Use Chrome or Edge, click Retry Listening, then speak clearly.')
         }
         return
       }
 
       setAnswer(transcript)
       await handleSubmitAnswer(transcript)
-    } catch {
+    } catch (error) {
       setVoiceState('idle')
-      setError('Transcription failed. Please click Retry Listening and try again.')
+      const message = String(error?.message || '').trim()
+      setError(message || 'Speech capture failed. Please click Retry Listening and speak again.')
     } finally {
       setIsTranscribing(false)
     }
@@ -386,16 +384,17 @@ function InterviewWorkspace({
     setError('')
     stopListening()
     void stopAudioRecording()
+    resetTranscriptRefs()
     const activeSessionId = listeningSessionRef.current + 1
     listeningSessionRef.current = activeSessionId
     setVoiceState('listening')
 
-    if (!supportsSpeechRecognition) {
+    const startRecordingOnlyMode = () => {
       startAudioRecording()
         .then((started) => {
           if (!started) {
             setVoiceState('idle')
-            setError('Voice input is not supported in this browser. Please type your answer.')
+            setError('Voice input requires browser speech recognition. Please open this interview in Chrome or Edge.')
             return
           }
 
@@ -406,95 +405,175 @@ function InterviewWorkspace({
 
             stopListening()
             void processCapturedAnswer('')
-          }, 12000)
+          }, LISTEN_TIMEOUT_MS)
         })
-        .catch(() => {
+        .catch((error) => {
           setVoiceState('idle')
-          setError('Microphone permission is required for voice input. Please allow microphone and retry.')
-        })
+          const message = String(error?.message || '').trim().toLowerCase()
+          if (message.includes('permission') || message.includes('denied') || message.includes('notallowed')) {
+            setError('Microphone permission is required for voice input. Please allow microphone and retry.')
+            return
+          }
 
-      return
+          setError('Could not start microphone capture. Check your microphone and retry listening.')
+        })
     }
 
-    const SpeechRecognition = getSpeechRecognition()
-    const recognition = new SpeechRecognition()
-    let finalTranscript = ''
-    let lastCapturedTranscript = ''
+    const requestMicThenContinue = async () => {
+      try {
+        const micSupported = await ensureMicrophoneAccess()
+        if (!micSupported && !supportsSpeechRecognition) {
+          setVoiceState('idle')
+          setError('Voice input requires browser speech recognition. Please open this interview in Chrome or Edge.')
+          return false
+        }
 
-    recognition.lang = 'en-US'
-    recognition.interimResults = true
-    recognition.continuous = false
-    recognition.maxAlternatives = 1
+        return true
+      } catch {
+        setVoiceState('idle')
+        setError('Microphone permission is required for voice input. Please allow microphone and retry.')
+        return false
+      }
+    }
 
-    recognition.onresult = (event) => {
-      if (activeSessionId !== listeningSessionRef.current) {
+    void requestMicThenContinue().then((canContinue) => {
+      if (!canContinue || activeSessionId !== listeningSessionRef.current) {
         return
       }
 
-      let interimTranscript = ''
+      if (!supportsSpeechRecognition) {
+        startRecordingOnlyMode()
+        return
+      }
 
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const segment = event.results[index][0]?.transcript || ''
-        if (event.results[index].isFinal) {
-          finalTranscript += `${segment} `
-        } else {
-          interimTranscript += segment
+      const SpeechRecognition = getSpeechRecognition()
+      let recognition
+
+      try {
+        recognition = new SpeechRecognition()
+      } catch {
+        startRecordingOnlyMode()
+        return
+      }
+
+      let finalTranscript = ''
+      let lastCapturedTranscript = ''
+      let hasResolvedRecognition = false
+
+      const processRecognitionResult = (fallbackTranscript = '') => {
+        if (hasResolvedRecognition || activeSessionId !== listeningSessionRef.current) {
+          return
+        }
+
+        hasResolvedRecognition = true
+        clearNoSpeechTimer()
+        recognitionRef.current = null
+        void processCapturedAnswer(fallbackTranscript)
+      }
+
+      recognition.lang = 'en-US'
+      recognition.interimResults = true
+      recognition.continuous = false
+      recognition.maxAlternatives = 1
+
+      recognition.onstart = () => {
+        if (activeSessionId !== listeningSessionRef.current) {
+          return
+        }
+
+        setError('')
+      }
+
+      recognition.onresult = (event) => {
+        if (activeSessionId !== listeningSessionRef.current) {
+          return
+        }
+
+        let interimTranscript = ''
+
+        for (let index = event.resultIndex; index < event.results.length; index += 1) {
+          const segment = event.results[index][0]?.transcript || ''
+          if (event.results[index].isFinal) {
+            finalTranscript += `${segment} `
+          } else {
+            interimTranscript += segment
+          }
+        }
+
+        const combinedTranscript = `${finalTranscript}${interimTranscript}`.trim()
+        if (combinedTranscript) {
+          lastCapturedTranscript = combinedTranscript
+          finalTranscriptRef.current = finalTranscript.trim()
+          latestTranscriptRef.current = combinedTranscript
+          setAnswer(combinedTranscript)
         }
       }
 
-      const combinedTranscript = `${finalTranscript}${interimTranscript}`.trim()
-      if (combinedTranscript) {
-        lastCapturedTranscript = combinedTranscript
-        setAnswer(combinedTranscript)
-      }
-    }
+      recognition.onerror = (event) => {
+        if (activeSessionId !== listeningSessionRef.current) {
+          return
+        }
 
-    recognition.onerror = () => {
-      if (activeSessionId !== listeningSessionRef.current) {
+        const errorType = String(event?.error || '').toLowerCase()
+        const isPermissionError = errorType === 'not-allowed' || errorType === 'service-not-allowed'
+        const isNoSpeechError = errorType === 'no-speech'
+
+        if (isPermissionError) {
+          hasResolvedRecognition = true
+          clearNoSpeechTimer()
+          recognitionRef.current = null
+          setVoiceState('idle')
+          setError('Microphone permission is required for voice input. Please allow microphone and retry.')
+          void stopAudioRecording()
+          return
+        }
+
+        if (isNoSpeechError) {
+          setError('No speech detected. Speak clearly after you click Retry Listening.')
+        } else {
+          setError('Could not capture your voice clearly. Trying transcription from recording...')
+        }
+
+        processRecognitionResult(finalTranscript.trim() || lastCapturedTranscript.trim())
+      }
+
+      recognition.onend = () => {
+        if (activeSessionId !== listeningSessionRef.current) {
+          return
+        }
+
+        processRecognitionResult(finalTranscript.trim() || lastCapturedTranscript.trim())
+      }
+
+      recognitionRef.current = recognition
+
+      try {
+        recognition.start()
+      } catch {
+        if (activeSessionId !== listeningSessionRef.current) {
+          return
+        }
+
+        recognitionRef.current = null
+        setError('Speech recognition unavailable. Falling back to audio transcription...')
+        startRecordingOnlyMode()
         return
       }
 
-      setVoiceState('idle')
-      setError('Could not capture your voice. Please retry or type your answer.')
-    }
+      noSpeechTimerRef.current = window.setTimeout(() => {
+        if (activeSessionId !== listeningSessionRef.current) {
+          return
+        }
 
-    recognition.onend = () => {
-      if (activeSessionId !== listeningSessionRef.current) {
-        return
-      }
+        if (!finalTranscript.trim() && !lastCapturedTranscript.trim()) {
+          stopListening()
+          void processCapturedAnswer('')
+        }
+      }, LISTEN_TIMEOUT_MS)
 
-      clearNoSpeechTimer()
-      void processCapturedAnswer(finalTranscript.trim() || lastCapturedTranscript.trim())
-    }
-
-    recognitionRef.current = recognition
-
-    try {
-      recognition.start()
-    } catch {
-      if (activeSessionId !== listeningSessionRef.current) {
-        return
-      }
-
-      setVoiceState('idle')
-      setError('Could not start voice listening. Please click Retry Listening again or type your answer.')
-      recognitionRef.current = null
-      return
-    }
-
-    noSpeechTimerRef.current = window.setTimeout(() => {
-      if (activeSessionId !== listeningSessionRef.current) {
-        return
-      }
-
-      if (!finalTranscript.trim() && !lastCapturedTranscript.trim()) {
-        stopListening()
-        void processCapturedAnswer('')
-      }
-    }, 12000)
-
-    startAudioRecording().catch(() => {
-      // Speech recognition continues even if MediaRecorder is unavailable.
+      startAudioRecording().catch(() => {
+        // Speech recognition continues even if MediaRecorder is unavailable.
+      })
     })
   }
 
@@ -523,7 +602,7 @@ function InterviewWorkspace({
       startListening()
     } catch {
       setVoiceState('idle')
-      setError('Speech output failed. You can retry listening or type your answer manually.')
+      setError('Speech output failed. You can retry listening to continue.')
     }
   }
 
@@ -531,7 +610,7 @@ function InterviewWorkspace({
     const answerToSubmit = (answerOverride || answer).trim()
 
     if (!answerToSubmit) {
-      setError('Please provide an answer before continuing.')
+      setError('Please speak your answer before continuing.')
       return
     }
 
@@ -584,7 +663,7 @@ function InterviewWorkspace({
       startListening()
     } catch {
       setVoiceState('idle')
-      setError('Could not replay the question. Please retry or type your answer.')
+      setError('Could not replay the question. Please retry listening and speak your answer.')
     }
   }
 
@@ -592,16 +671,12 @@ function InterviewWorkspace({
     if (voiceState === 'listening' && !isSubmittingRef.current) {
       setError('')
       stopListening()
-      await processCapturedAnswer(latestAnswerRef.current)
+      await processCapturedAnswer(getLatestCapturedTranscript())
       return
     }
 
     await handleSubmitAnswer()
   }
-
-  useEffect(() => {
-    latestAnswerRef.current = answer
-  }, [answer])
 
   useEffect(() => {
     isSubmittingRef.current = isSubmitting
@@ -652,6 +727,15 @@ function InterviewWorkspace({
               ? 'Your Answer Recorded'
               : 'Interviewer is listening'
 
+  const listeningLabel =
+    voiceState === 'listening'
+      ? 'Listening... Speak your answer now'
+      : voiceState === 'processing'
+        ? 'Processing your speech...'
+        : voiceState === 'speaking'
+          ? 'Wait for the question to finish, then speak'
+          : 'Click Retry Listening, then speak your answer'
+
   return (
     <section className="interview-workspace">
       <div className="ai-visual-wrap">
@@ -675,11 +759,18 @@ function InterviewWorkspace({
           
           {!isAnswered ? (
             <div className="answer-input-section">
+              <div
+                className={`answer-listening-indicator ${voiceState === 'listening' ? 'active' : ''}`}
+                aria-live="polite"
+              >
+                <span className="dot" />
+                <span>{listeningLabel}</span>
+              </div>
               <textarea
                 className="answer-textarea"
-                placeholder="Type your answer here..."
+                placeholder="Your spoken answer will appear here..."
                 value={answer}
-                onChange={(e) => setAnswer(e.target.value)}
+                readOnly
                 disabled={isSubmitting || isTranscribing || voiceState === 'speaking'}
                 rows={6}
               />

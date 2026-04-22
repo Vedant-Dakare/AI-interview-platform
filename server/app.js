@@ -15,7 +15,7 @@ import proctorRoutes from './routes/proctorRoutes.js'
 import { errorHandler, notFound } from './middleware/errorMiddleware.js'
 import prisma from './prisma/client.js'
 
-dotenv.config()
+dotenv.config({ override: true })
 
 const app = express()
 const __filename = fileURLToPath(import.meta.url)
