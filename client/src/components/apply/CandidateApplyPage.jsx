@@ -25,7 +25,11 @@ function CandidateApplyPage({ onBackHome }) {
       return
     }
 
-    if (resumeFile.type !== 'application/pdf') {
+    const fileName = (resumeFile.name || '').toLowerCase()
+    const isPdfByExt = fileName.endsWith('.pdf')
+    const isPdfByMime = !resumeFile.type || resumeFile.type === 'application/pdf'
+
+    if (!isPdfByExt || !isPdfByMime) {
       setErrorMessage('Resume must be a PDF file.')
       return
     }
@@ -48,10 +52,12 @@ function CandidateApplyPage({ onBackHome }) {
       setRole('backend')
       setResumeFile(null)
       window.setTimeout(() => {
-        onBackHome()
+        if (typeof onBackHome === 'function') {
+          onBackHome()
+        }
       }, 1200)
     } catch (error) {
-      setErrorMessage(error.message)
+      setErrorMessage(error?.message || 'Unable to submit application. Please try again.')
     } finally {
       setIsSubmitting(false)
     }

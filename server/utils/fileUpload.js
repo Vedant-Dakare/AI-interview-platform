@@ -7,7 +7,18 @@ const maxFileSizeMb = Number.isFinite(configuredMaxFileSizeMb) && configuredMaxF
   : 5
 
 function fileFilter(req, file, cb) {
-  const isPdfMime = file.mimetype === 'application/pdf'
+  const allowedPdfMimes = new Set([
+    'application/pdf',
+    'application/x-pdf',
+    'application/acrobat',
+    'applications/vnd.pdf',
+    'text/pdf',
+    'text/x-pdf',
+    'binary/octet-stream',
+  ])
+
+  // Some clients send generic or empty MIME types for PDFs, so we prioritize extension.
+  const isPdfMime = !file.mimetype || allowedPdfMimes.has(file.mimetype)
   const isPdfExt = path.extname(file.originalname).toLowerCase() === '.pdf'
 
   if (!isPdfMime || !isPdfExt) {

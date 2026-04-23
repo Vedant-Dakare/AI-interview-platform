@@ -78,9 +78,14 @@ const applyForInterview = asyncHandler(async (req, res) => {
       fileBuffer,
       originalName: req.file.originalname,
     })
-  } catch {
-    res.status(500)
-    throw new Error('Unable to store resume file. Please try again shortly.')
+  } catch (error) {
+    console.error('Resume storage failed in applyForInterview', {
+      email: normalizedEmail,
+      role: normalizedRole,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    res.status(502)
+    throw new Error('Unable to store resume file due to storage service error. Please try again shortly.')
   }
 
   const candidate = await prisma.candidate.create({
