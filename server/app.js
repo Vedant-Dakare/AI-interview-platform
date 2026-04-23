@@ -13,10 +13,14 @@ import proctorRoutes from './routes/proctorRoutes.js'
 import { errorHandler, notFound } from './middleware/errorMiddleware.js'
 import prisma from './prisma/client.js'
 import { assertCloudinaryConfig } from './services/resumeStorageService.js'
+import { retryPendingInviteEmails } from './services/interviewInviteService.js'
 
 dotenv.config({ override: true })
 
 const app = express()
+
+const inviteEmailRetryIntervalMs = Number(process.env.INVITE_EMAIL_RETRY_INTERVAL_MS || 300000)
+const inviteEmailRetryBatchSize = Number(process.env.INVITE_EMAIL_RETRY_BATCH_SIZE || 25)
 
 const alwaysAllowedOrigins = ['https://ai-interview-platform-sigma-ecru.vercel.app']
 const configuredOrigins = (process.env.CORS_ORIGIN || '')
@@ -89,9 +93,27 @@ async function bootstrap() {
     console.log('PostgreSQL connected via Prisma')
 
     const port = Number(process.env.PORT || 5000)
+    let inviteRetryTimer = null
+
+    const runInviteEmailRetry = async () => {
+      try {
+        const result = await retryPendingInviteEmails({ limit: inviteEmailRetryBatchSize })
+        if (result.sentCount > 0 || result.failedCount > 0) {
+          console.log('Invite email retry run completed', result)
+        }
+      } catch (error) {
+        console.error('Invite email retry run failed', error)
+      }
+    }
 
     const server = app.listen(port, () => {
       console.log(`Server running on port ${port}`)
+
+      if (inviteEmailRetryIntervalMs > 0) {
+        runInviteEmailRetry()
+        inviteRetryTimer = setInterval(runInviteEmailRetry, inviteEmailRetryIntervalMs)
+        inviteRetryTimer.unref?.()
+      }
     })
 
     process.on('unhandledRejection', (error) => {
@@ -103,6 +125,9 @@ async function bootstrap() {
     })
 
     process.on('SIGTERM', () => {
+      if (inviteRetryTimer) {
+        clearInterval(inviteRetryTimer)
+      }
       server.close(async () => {
         await prisma.$disconnect()
         process.exit(0)

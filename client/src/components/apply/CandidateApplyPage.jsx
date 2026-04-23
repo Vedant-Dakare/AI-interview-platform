@@ -8,12 +8,14 @@ function CandidateApplyPage({ onBackHome }) {
   const [resumeFile, setResumeFile] = useState(null)
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
+  const [fallbackInterviewLink, setFallbackInterviewLink] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   async function handleSubmit(event) {
     event.preventDefault()
     setErrorMessage('')
     setSuccessMessage('')
+    setFallbackInterviewLink('')
 
     if (!fullName.trim() || !email.trim()) {
       setErrorMessage('Full name and email are required.')
@@ -51,11 +53,21 @@ function CandidateApplyPage({ onBackHome }) {
       setEmail('')
       setRole('backend')
       setResumeFile(null)
-      window.setTimeout(() => {
-        if (typeof onBackHome === 'function') {
-          onBackHome()
-        }
-      }, 1200)
+
+      const emailSent = Boolean(response?.data?.emailSent)
+      const interviewLink = response?.data?.interviewLink
+
+      if (!emailSent && typeof interviewLink === 'string' && interviewLink) {
+        setFallbackInterviewLink(interviewLink)
+      }
+
+      if (emailSent) {
+        window.setTimeout(() => {
+          if (typeof onBackHome === 'function') {
+            onBackHome()
+          }
+        }, 1200)
+      }
     } catch (error) {
       setErrorMessage(error?.message || 'Unable to submit application. Please try again.')
     } finally {
@@ -120,6 +132,14 @@ function CandidateApplyPage({ onBackHome }) {
 
             {errorMessage ? <div className="auth-error">{errorMessage}</div> : null}
             {successMessage ? <div className="auth-success">{successMessage}</div> : null}
+            {fallbackInterviewLink ? (
+              <div className="auth-success">
+                Email delivery is delayed. Use your secure interview link now:{' '}
+                <a href={fallbackInterviewLink} target="_blank" rel="noreferrer">
+                  Start Interview
+                </a>
+              </div>
+            ) : null}
 
             <button type="submit" className="auth-submit" disabled={isSubmitting}>
               {isSubmitting ? 'Submitting...' : 'Submit Application'}

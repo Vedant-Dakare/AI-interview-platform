@@ -105,8 +105,81 @@ async function createInterviewInvite({
   }
 }
 
+async function retryPendingInviteEmails({ limit = 25 } = {}) {
+  const safeLimit = Number.isFinite(Number(limit)) && Number(limit) > 0 ? Number(limit) : 25
+
+  const pendingInvites = await prisma.interviewInvite.findMany({
+    where: {
+      status: 'pending',
+      emailSentAt: null,
+      tokenExpiry: {
+        gt: new Date(),
+      },
+    },
+    include: {
+      candidate: true,
+    },
+    orderBy: {
+      createdAt: 'asc',
+    },
+    take: safeLimit,
+  })
+
+  let sentCount = 0
+  let failedCount = 0
+
+  for (const invite of pendingInvites) {
+    try {
+      const newToken = generateInterviewToken()
+      const newTokenHash = hashInterviewToken(newToken)
+      const newTokenExpiry = getTokenExpiry(24)
+      const interviewLink = buildInterviewLink(newToken)
+
+      await prisma.interviewInvite.update({
+        where: { id: invite.id },
+        data: {
+          interviewTokenHash: newTokenHash,
+          tokenExpiry: newTokenExpiry,
+        },
+      })
+
+      await sendInterviewLinkEmail({
+        to: invite.email,
+        role: invite.role,
+        interviewLink,
+        expiresAt: newTokenExpiry,
+        candidateName: invite.candidate?.fullName,
+      })
+
+      await prisma.interviewInvite.update({
+        where: { id: invite.id },
+        data: {
+          emailSentAt: new Date(),
+        },
+      })
+
+      sentCount += 1
+    } catch (error) {
+      failedCount += 1
+      console.error('Interview invite retry email failed', {
+        candidateId: invite.candidateId,
+        email: invite.email,
+        role: invite.role,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  return {
+    processed: pendingInvites.length,
+    sentCount,
+    failedCount,
+  }
+}
+
 export {
   normalizeRole,
   buildQuestionPlan,
   createInterviewInvite,
+  retryPendingInviteEmails,
 }

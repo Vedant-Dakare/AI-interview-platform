@@ -78,6 +78,8 @@ backend/
 - `SMTP_GREETING_TIMEOUT_MS` SMTP greeting timeout in milliseconds (optional, default `10000`)
 - `SMTP_SOCKET_TIMEOUT_MS` SMTP socket timeout in milliseconds (optional, default `15000`)
 - `SMTP_SEND_TIMEOUT_MS` max sendMail wait time in milliseconds (optional, default `15000`)
+- `INVITE_EMAIL_RETRY_INTERVAL_MS` interval for retrying unsent invite emails in milliseconds (optional, default `300000`)
+- `INVITE_EMAIL_RETRY_BATCH_SIZE` max pending invites processed per retry run (optional, default `25`)
 - `CLOUDINARY_CLOUD_NAME` Cloudinary cloud name (required)
 - `CLOUDINARY_API_KEY` Cloudinary API key (required)
 - `CLOUDINARY_API_SECRET` Cloudinary API secret (required)
