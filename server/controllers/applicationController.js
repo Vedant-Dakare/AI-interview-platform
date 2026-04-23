@@ -67,9 +67,12 @@ const applyForInterview = asyncHandler(async (req, res) => {
   try {
     const parsedPdf = await pdfParse(fileBuffer)
     extractedText = (parsedPdf.text || '').trim()
-  } catch {
-    res.status(400)
-    throw new Error('Unable to read resume PDF. Please upload a valid PDF file.')
+  } catch (error) {
+    console.warn('Resume text extraction failed, continuing without insights', {
+      email: normalizedEmail,
+      role: normalizedRole,
+      error: error instanceof Error ? error.message : String(error),
+    })
   }
 
   let storedResume
@@ -79,13 +82,14 @@ const applyForInterview = asyncHandler(async (req, res) => {
       originalName: req.file.originalname,
     })
   } catch (error) {
+    const storageError = error instanceof Error ? error.message : String(error)
     console.error('Resume storage failed in applyForInterview', {
       email: normalizedEmail,
       role: normalizedRole,
-      error: error instanceof Error ? error.message : String(error),
+      error: storageError,
     })
     res.status(502)
-    throw new Error('Unable to store resume file due to storage service error. Please try again shortly.')
+    throw new Error(`Unable to store resume file due to storage service error: ${storageError}`)
   }
 
   const candidate = await prisma.candidate.create({
