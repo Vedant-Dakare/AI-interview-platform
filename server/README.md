@@ -74,6 +74,10 @@ backend/
 - `SMTP_PORT` SMTP port (587 or 465)
 - `SMTP_USER` SMTP account username
 - `SMTP_PASS` SMTP account password
+- `SMTP_CONNECTION_TIMEOUT_MS` SMTP connect timeout in milliseconds (optional, default `10000`)
+- `SMTP_GREETING_TIMEOUT_MS` SMTP greeting timeout in milliseconds (optional, default `10000`)
+- `SMTP_SOCKET_TIMEOUT_MS` SMTP socket timeout in milliseconds (optional, default `15000`)
+- `SMTP_SEND_TIMEOUT_MS` max sendMail wait time in milliseconds (optional, default `15000`)
 - `CLOUDINARY_CLOUD_NAME` Cloudinary cloud name (required)
 - `CLOUDINARY_API_KEY` Cloudinary API key (required)
 - `CLOUDINARY_API_SECRET` Cloudinary API secret (required)

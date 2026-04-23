@@ -2,6 +2,11 @@ import nodemailer from 'nodemailer'
 
 let transporter
 
+function getPositiveNumberEnv(name, fallback) {
+  const parsed = Number(process.env[name])
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
 function getTransporter() {
   if (transporter) {
     return transporter
@@ -11,6 +16,9 @@ function getTransporter() {
   const port = Number(process.env.SMTP_PORT || 587)
   const user = process.env.SMTP_USER
   const pass = process.env.SMTP_PASS
+  const connectionTimeout = getPositiveNumberEnv('SMTP_CONNECTION_TIMEOUT_MS', 10000)
+  const greetingTimeout = getPositiveNumberEnv('SMTP_GREETING_TIMEOUT_MS', 10000)
+  const socketTimeout = getPositiveNumberEnv('SMTP_SOCKET_TIMEOUT_MS', 15000)
 
   if (!host || !user || !pass) {
     throw new Error('SMTP configuration is missing')
@@ -24,6 +32,9 @@ function getTransporter() {
       user,
       pass,
     },
+    connectionTimeout,
+    greetingTimeout,
+    socketTimeout,
   })
 
   return transporter
@@ -59,14 +70,22 @@ async function sendInterviewLinkEmail({ to, role, interviewLink, expiresAt, cand
   const from = process.env.MAIL_FROM || 'noreply@intervueai.com'
   const transport = getTransporter()
   const email = buildInterviewInviteEmail({ role, interviewLink, expiresAt, candidateName })
+  const sendTimeoutMs = getPositiveNumberEnv('SMTP_SEND_TIMEOUT_MS', 15000)
 
-  await transport.sendMail({
-    from,
-    to,
-    subject: email.subject,
-    html: email.html,
-    text: email.text,
-  })
+  await Promise.race([
+    transport.sendMail({
+      from,
+      to,
+      subject: email.subject,
+      html: email.html,
+      text: email.text,
+    }),
+    new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`SMTP send timeout after ${sendTimeoutMs}ms`))
+      }, sendTimeoutMs)
+    }),
+  ])
 }
 
 export {
