@@ -67,24 +67,41 @@ async function createInterviewInvite({
     },
   })
 
-  if (sendEmail) {
-    await sendInterviewLinkEmail({
-      to: email,
-      role,
-      interviewLink,
-      expiresAt: tokenExpiry,
-      candidateName,
-    })
+  let emailSent = false
+  let emailError = null
 
-    await prisma.interviewInvite.update({
-      where: { id: invite.id },
-      data: { emailSentAt: new Date() },
-    })
+  if (sendEmail) {
+    try {
+      await sendInterviewLinkEmail({
+        to: email,
+        role,
+        interviewLink,
+        expiresAt: tokenExpiry,
+        candidateName,
+      })
+
+      await prisma.interviewInvite.update({
+        where: { id: invite.id },
+        data: { emailSentAt: new Date() },
+      })
+
+      emailSent = true
+    } catch (error) {
+      emailError = error instanceof Error ? error.message : 'Unknown email delivery error'
+      console.error('Interview invite email delivery failed', {
+        email,
+        role,
+        candidateId,
+        error: emailError,
+      })
+    }
   }
 
   return {
     invite,
     interviewLink,
+    emailSent,
+    emailError,
   }
 }
 

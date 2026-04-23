@@ -9,6 +9,7 @@ Production-oriented Node.js backend for interview workflows.
 - JWT auth
 - Multer for PDF upload
 - pdf-parse for resume text extraction
+- Cloudinary for resume storage
 - dotenv
 - ESM modules (`import`/`export`)
 - Helmet + CORS + Compression + Rate limiting
@@ -73,6 +74,10 @@ backend/
 - `SMTP_PORT` SMTP port (587 or 465)
 - `SMTP_USER` SMTP account username
 - `SMTP_PASS` SMTP account password
+- `CLOUDINARY_CLOUD_NAME` Cloudinary cloud name (required)
+- `CLOUDINARY_API_KEY` Cloudinary API key (required)
+- `CLOUDINARY_API_SECRET` Cloudinary API secret (required)
+- `CLOUDINARY_RESUME_FOLDER` folder for uploaded resumes (optional, default `intervueai/resumes`)
 
 ## API Endpoints
 
@@ -146,6 +151,6 @@ backend/
 
 - Interview questions are currently fixed dummy questions in `interviewController.js`.
 - Answers are stored as-is with no AI or automatic scoring.
-- Uploaded files are exposed via `/uploads` static route.
+- Resume PDFs are stored in Cloudinary (raw uploads).
 - APIs are organized with MVC plus Prisma data layer.
 - Interview data is normalized into `Interview`, `Question`, and `Answer` tables.

@@ -1,13 +1,8 @@
-import fs from 'fs/promises'
-import path from 'path'
-import { fileURLToPath } from 'url'
 import pdfParse from 'pdf-parse'
 import asyncHandler from '../middleware/asyncHandler.js'
 import prisma from '../prisma/client.js'
 import { createInterviewInvite, normalizeRole } from '../services/interviewInviteService.js'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+import { storeResumeFile } from '../services/resumeStorageService.js'
 
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
@@ -48,6 +43,9 @@ const applyForInterview = asyncHandler(async (req, res) => {
       email: normalizedEmail,
       role: normalizedRole,
       status: 'pending',
+      emailSentAt: {
+        not: null,
+      },
       tokenExpiry: {
         gt: new Date(),
       },
@@ -65,31 +63,38 @@ const applyForInterview = asyncHandler(async (req, res) => {
     throw new Error('Resume upload failed. Please retry.')
   }
 
-  const parsedPdf = await pdfParse(fileBuffer)
-  const extractedText = (parsedPdf.text || '').trim()
+  let extractedText = ''
+  try {
+    const parsedPdf = await pdfParse(fileBuffer)
+    extractedText = (parsedPdf.text || '').trim()
+  } catch {
+    res.status(400)
+    throw new Error('Unable to read resume PDF. Please upload a valid PDF file.')
+  }
 
-  const originalName = req.file.originalname || 'resume.pdf'
-  const safeBase = originalName
-    .toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9.-]/g, '')
-  const safeFilename = `${Date.now()}-${safeBase || 'resume.pdf'}`
-  const uploadDir = path.join(__dirname, '..', 'uploads', 'resumes')
-  await fs.mkdir(uploadDir, { recursive: true })
-  await fs.writeFile(path.join(uploadDir, safeFilename), fileBuffer)
+  let storedResume
+  try {
+    storedResume = await storeResumeFile({
+      fileBuffer,
+      originalName: req.file.originalname,
+    })
+  } catch {
+    res.status(500)
+    throw new Error('Unable to store resume file. Please try again shortly.')
+  }
 
   const candidate = await prisma.candidate.create({
     data: {
       fullName: fullName.trim(),
       email: normalizedEmail,
       role: normalizedRole,
-      resumeFileUrl: `/uploads/resumes/${safeFilename}`,
+      resumeFileUrl: storedResume.fileUrl,
       resumeInsights: extractedText || null,
       applicationStatus: 'submitted',
     },
   })
 
-  const { invite } = await createInterviewInvite({
+  const { invite, emailSent } = await createInterviewInvite({
     candidateRecordId: candidate.id,
     candidatePublicId: candidate.candidateId,
     email: candidate.email,
@@ -102,17 +107,20 @@ const applyForInterview = asyncHandler(async (req, res) => {
   await prisma.candidate.update({
     where: { id: candidate.id },
     data: {
-      applicationStatus: 'invited',
+      applicationStatus: emailSent ? 'invited' : 'submitted',
     },
   })
 
   res.status(201).json({
     success: true,
-    message: 'Your application has been submitted. Please check your email for the interview link.',
+    message: emailSent
+      ? 'Your application has been submitted. Please check your email for the interview link.'
+      : 'Your application has been submitted. We are processing your interview invite and will email it shortly.',
     data: {
       candidateId: candidate.candidateId,
       email: candidate.email,
       role: candidate.role,
+      emailSent,
       inviteStatus: invite.status,
       tokenExpiry: invite.tokenExpiry,
     },

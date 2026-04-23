@@ -1,10 +1,10 @@
 import express from 'express'
 import { uploadResume } from '../controllers/resumeController.js'
 import { protect } from '../middleware/authMiddleware.js'
-import { uploadResume as uploadResumeMiddleware } from '../utils/fileUpload.js'
+import { handleResumeUpload } from '../utils/resumeUploadHandler.js'
 
 const router = express.Router()
 
-router.post('/upload', protect, uploadResumeMiddleware.single('resume'), uploadResume)
+router.post('/upload', protect, handleResumeUpload, uploadResume)
 
 export default router

@@ -1,12 +1,7 @@
-import fs from 'fs/promises'
-import path from 'path'
-import { fileURLToPath } from 'url'
 import pdfParse from 'pdf-parse'
 import asyncHandler from '../middleware/asyncHandler.js'
 import prisma from '../prisma/client.js'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+import { storeResumeFile } from '../services/resumeStorageService.js'
 
 const uploadResume = asyncHandler(async (req, res) => {
   if (!req.file) {
@@ -20,28 +15,35 @@ const uploadResume = asyncHandler(async (req, res) => {
     throw new Error('Resume upload failed. Please retry.')
   }
 
-  const parsedPdf = await pdfParse(fileBuffer)
-  const extractedText = (parsedPdf.text || '').trim()
+  let extractedText = ''
+  try {
+    const parsedPdf = await pdfParse(fileBuffer)
+    extractedText = (parsedPdf.text || '').trim()
+  } catch {
+    res.status(400)
+    throw new Error('Unable to read resume PDF. Please upload a valid PDF file.')
+  }
 
   if (!extractedText) {
     res.status(400)
     throw new Error('Unable to extract text from this PDF')
   }
 
-  const originalName = req.file.originalname || 'resume.pdf'
-  const safeBase = originalName
-    .toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9.-]/g, '')
-  const safeFilename = `${Date.now()}-${safeBase || 'resume.pdf'}`
-  const uploadDir = path.join(__dirname, '..', 'uploads', 'resumes')
-  await fs.mkdir(uploadDir, { recursive: true })
-  await fs.writeFile(path.join(uploadDir, safeFilename), fileBuffer)
+  let storedResume
+  try {
+    storedResume = await storeResumeFile({
+      fileBuffer,
+      originalName: req.file.originalname,
+    })
+  } catch {
+    res.status(500)
+    throw new Error('Unable to store resume file. Please try again shortly.')
+  }
 
   const resume = await prisma.resume.create({
     data: {
       userId: req.user.id,
-      fileUrl: `/uploads/resumes/${safeFilename}`,
+      fileUrl: storedResume.fileUrl,
       extractedText,
     },
   })

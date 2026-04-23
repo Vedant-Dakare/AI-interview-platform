@@ -47,6 +47,9 @@ function CandidateApplyPage({ onBackHome }) {
       setEmail('')
       setRole('backend')
       setResumeFile(null)
+      window.setTimeout(() => {
+        onBackHome()
+      }, 1200)
     } catch (error) {
       setErrorMessage(error.message)
     } finally {

@@ -1,7 +1,10 @@
 import path from 'path'
 import multer from 'multer'
 
-const maxFileSizeMb = Number(process.env.MAX_FILE_SIZE_MB || 5)
+const configuredMaxFileSizeMb = Number(process.env.MAX_FILE_SIZE_MB)
+const maxFileSizeMb = Number.isFinite(configuredMaxFileSizeMb) && configuredMaxFileSizeMb > 0
+  ? configuredMaxFileSizeMb
+  : 5
 
 function fileFilter(req, file, cb) {
   const isPdfMime = file.mimetype === 'application/pdf'
@@ -24,5 +27,6 @@ const uploadResume = multer({
 })
 
 export {
+  maxFileSizeMb,
   uploadResume,
 }

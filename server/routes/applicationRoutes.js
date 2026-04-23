@@ -1,9 +1,9 @@
 import express from 'express'
 import { applyForInterview } from '../controllers/applicationController.js'
-import { uploadResume } from '../utils/fileUpload.js'
+import { handleResumeUpload } from '../utils/resumeUploadHandler.js'
 
 const router = express.Router()
 
-router.post('/', uploadResume.single('resume'), applyForInterview)
+router.post('/', handleResumeUpload, applyForInterview)
 
 export default router

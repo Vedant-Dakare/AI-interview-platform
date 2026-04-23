@@ -1,5 +1,3 @@
-import path from 'path'
-import { fileURLToPath } from 'url'
 import compression from 'compression'
 import cors from 'cors'
 import dotenv from 'dotenv'
@@ -14,12 +12,11 @@ import resumeRoutes from './routes/resumeRoutes.js'
 import proctorRoutes from './routes/proctorRoutes.js'
 import { errorHandler, notFound } from './middleware/errorMiddleware.js'
 import prisma from './prisma/client.js'
+import { assertCloudinaryConfig } from './services/resumeStorageService.js'
 
 dotenv.config({ override: true })
 
 const app = express()
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
 
 const alwaysAllowedOrigins = ['https://ai-interview-platform-sigma-ecru.vercel.app']
 const configuredOrigins = (process.env.CORS_ORIGIN || '')
@@ -67,9 +64,6 @@ app.use(compression())
 app.use(express.json({ limit: '1mb' }))
 app.use(express.urlencoded({ extended: true }))
 
-// Expose uploaded resume files via static route.
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')))
-
 app.get('/api/health', (req, res) => {
   res.status(200).json({
     success: true,
@@ -90,6 +84,7 @@ app.use(errorHandler)
 
 async function bootstrap() {
   try {
+    assertCloudinaryConfig()
     await prisma.$connect()
     console.log('PostgreSQL connected via Prisma')
 
