@@ -2,6 +2,23 @@ import nodemailer from 'nodemailer'
 
 let transporter
 
+function parseBooleanEnv(value, fallback = false) {
+  if (typeof value !== 'string') {
+    return fallback
+  }
+
+  const normalized = value.trim().toLowerCase()
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+    return true
+  }
+
+  if (['0', 'false', 'no', 'off'].includes(normalized)) {
+    return false
+  }
+
+  return fallback
+}
+
 function getPositiveNumberEnv(name, fallback) {
   const parsed = Number(process.env[name])
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
@@ -16,22 +33,29 @@ function getTransporter() {
   const port = Number(process.env.SMTP_PORT || 587)
   const user = process.env.SMTP_USER
   const pass = process.env.SMTP_PASS
+  const secure = parseBooleanEnv(process.env.SMTP_SECURE, port === 465)
+  const ignoreTls = parseBooleanEnv(process.env.SMTP_IGNORE_TLS, false)
   const connectionTimeout = getPositiveNumberEnv('SMTP_CONNECTION_TIMEOUT_MS', 10000)
   const greetingTimeout = getPositiveNumberEnv('SMTP_GREETING_TIMEOUT_MS', 10000)
   const socketTimeout = getPositiveNumberEnv('SMTP_SOCKET_TIMEOUT_MS', 15000)
 
-  if (!host || !user || !pass) {
+  if (!host) {
     throw new Error('SMTP configuration is missing')
   }
+
+  const auth = user && pass
+    ? {
+      user,
+      pass,
+    }
+    : undefined
 
   transporter = nodemailer.createTransport({
     host,
     port,
-    secure: port === 465,
-    auth: {
-      user,
-      pass,
-    },
+    secure,
+    auth,
+    ignoreTLS: ignoreTls,
     connectionTimeout,
     greetingTimeout,
     socketTimeout,

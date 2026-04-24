@@ -72,8 +72,10 @@ backend/
 - `MAIL_FROM` sender email for interview invites
 - `SMTP_HOST` SMTP host for outbound mail
 - `SMTP_PORT` SMTP port (587 or 465)
-- `SMTP_USER` SMTP account username
-- `SMTP_PASS` SMTP account password
+- `SMTP_USER` SMTP account username (optional for no-auth local SMTP)
+- `SMTP_PASS` SMTP account password (optional for no-auth local SMTP)
+- `SMTP_SECURE` force SMTPS mode (`true`/`false`, default auto: `true` for 465)
+- `SMTP_IGNORE_TLS` disable STARTTLS negotiation for providers that require plain SMTP (`true`/`false`, default `false`)
 - `SMTP_CONNECTION_TIMEOUT_MS` SMTP connect timeout in milliseconds (optional, default `10000`)
 - `SMTP_GREETING_TIMEOUT_MS` SMTP greeting timeout in milliseconds (optional, default `10000`)
 - `SMTP_SOCKET_TIMEOUT_MS` SMTP socket timeout in milliseconds (optional, default `15000`)

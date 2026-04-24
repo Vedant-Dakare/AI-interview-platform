@@ -116,7 +116,7 @@ const sendInterviewLink = asyncHandler(async (req, res) => {
     data: {
       interviewTokenHash: newTokenHash,
       tokenExpiry: newExpiry,
-      emailSentAt: new Date(),
+      emailSentAt: null,
       status: 'pending',
     },
     include: {
@@ -130,6 +130,13 @@ const sendInterviewLink = asyncHandler(async (req, res) => {
     interviewLink,
     expiresAt: updatedInvite.tokenExpiry,
     candidateName: updatedInvite.candidate?.fullName,
+  })
+
+  await prisma.interviewInvite.update({
+    where: { candidateId },
+    data: {
+      emailSentAt: new Date(),
+    },
   })
 
   res.status(200).json({

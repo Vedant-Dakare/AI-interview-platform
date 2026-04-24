@@ -103,7 +103,7 @@ const applyForInterview = asyncHandler(async (req, res) => {
     },
   })
 
-  const { invite, emailSent, interviewLink } = await createInterviewInvite({
+  const { invite, emailSent, emailError, interviewLink } = await createInterviewInvite({
     candidateRecordId: candidate.id,
     candidatePublicId: candidate.candidateId,
     email: candidate.email,
@@ -130,6 +130,7 @@ const applyForInterview = asyncHandler(async (req, res) => {
       email: candidate.email,
       role: candidate.role,
       emailSent,
+      emailError: emailSent ? undefined : emailError,
       interviewLink: emailSent ? undefined : interviewLink,
       inviteStatus: invite.status,
       tokenExpiry: invite.tokenExpiry,

@@ -9,6 +9,7 @@ function CandidateApplyPage({ onBackHome }) {
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [fallbackInterviewLink, setFallbackInterviewLink] = useState('')
+  const [emailDelayReason, setEmailDelayReason] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   async function handleSubmit(event) {
@@ -16,6 +17,7 @@ function CandidateApplyPage({ onBackHome }) {
     setErrorMessage('')
     setSuccessMessage('')
     setFallbackInterviewLink('')
+    setEmailDelayReason('')
 
     if (!fullName.trim() || !email.trim()) {
       setErrorMessage('Full name and email are required.')
@@ -56,9 +58,13 @@ function CandidateApplyPage({ onBackHome }) {
 
       const emailSent = Boolean(response?.data?.emailSent)
       const interviewLink = response?.data?.interviewLink
+      const emailError = typeof response?.data?.emailError === 'string' ? response.data.emailError : ''
 
       if (!emailSent && typeof interviewLink === 'string' && interviewLink) {
         setFallbackInterviewLink(interviewLink)
+        if (emailError) {
+          setEmailDelayReason(emailError)
+        }
       }
 
       if (emailSent) {
@@ -138,6 +144,7 @@ function CandidateApplyPage({ onBackHome }) {
                 <a href={fallbackInterviewLink} target="_blank" rel="noreferrer">
                   Start Interview
                 </a>
+                {emailDelayReason ? <div>Mail service detail: {emailDelayReason}</div> : null}
               </div>
             ) : null}
 
