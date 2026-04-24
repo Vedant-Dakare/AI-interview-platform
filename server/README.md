@@ -67,6 +67,7 @@ backend/
 - `MAX_FILE_SIZE_MB` max resume PDF size
 - `CORS_ORIGIN` comma-separated allowed origins (example: `http://localhost:5173`)
 - `AUTH_RATE_LIMIT_MAX` max auth requests per 15 minutes per IP
+- `ALLOW_INTERVIEW_RETAKE` allow users to start a new interview even after a completed one (`true`/`false`, defaults to `true` in non-production and `false` in production)
 - `INTERVIEW_ADMIN_API_KEY` internal secret for creating and emailing interview links
 - `PUBLIC_APP_URL` base URL used to build interview links in emails
 - `MAIL_FROM` sender email for interview invites

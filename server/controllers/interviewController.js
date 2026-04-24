@@ -53,6 +53,23 @@ function parseInterviewId(interviewId) {
   return parsedId
 }
 
+function isInterviewRetakeAllowed() {
+  const raw = process.env.ALLOW_INTERVIEW_RETAKE
+
+  if (typeof raw === 'string') {
+    const normalized = raw.trim().toLowerCase()
+    if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+      return true
+    }
+
+    if (['0', 'false', 'no', 'off'].includes(normalized)) {
+      return false
+    }
+  }
+
+  return (process.env.NODE_ENV || 'development') !== 'production'
+}
+
 function mapQuestionsAndAnswers(questions) {
   const sortedQuestions = [...questions].sort((a, b) => a.orderIndex - b.orderIndex)
   const mappedQuestions = sortedQuestions.map((question) => ({
@@ -127,7 +144,6 @@ const startInterview = asyncHandler(async (req, res) => {
     select: {
       id: true,
       role: true,
-      completedAt: true,
       updatedAt: true,
     },
     orderBy: {
@@ -135,7 +151,7 @@ const startInterview = asyncHandler(async (req, res) => {
     },
   })
 
-  if (existingCompletedInterview) {
+  if (existingCompletedInterview && !isInterviewRetakeAllowed()) {
     res.status(409)
     throw new Error('You have already completed an interview and cannot start another one.')
   }
