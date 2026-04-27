@@ -19,6 +19,8 @@ dist/
 build/
 .next/
 
+venv/
+
 # Runtime
 node_modules/
 
