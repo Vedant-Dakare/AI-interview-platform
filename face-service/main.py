@@ -11,10 +11,13 @@ from typing import Any
 import cv2
 import mediapipe as mp
 import numpy as np
-from deepface import DeepFace
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
+
+os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
+
+from deepface import DeepFace
 
 APP_TITLE = "IntervueAI Face Service"
 DEFAULT_MATCH_THRESHOLD = 0.56
@@ -147,7 +150,7 @@ def _verify_identity(reference_image_rgb: np.ndarray, current_image_rgb: np.ndar
         verify_result = DeepFace.verify(
             img1_path=_to_bgr(reference_image_rgb),
             img2_path=_to_bgr(current_image_rgb),
-            model_name=os.getenv("DEEPFACE_MODEL_NAME", "ArcFace"),
+            model_name=os.getenv("DEEPFACE_MODEL_NAME", "Facenet512"),
             detector_backend="opencv",
             enforce_detection=False,
             distance_metric=os.getenv("DEEPFACE_DISTANCE_METRIC", "cosine"),
