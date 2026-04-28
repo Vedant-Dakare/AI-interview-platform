@@ -930,6 +930,68 @@ body {
   display: block;
 }
 
+.face-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.face-status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.58rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border: 1px solid transparent;
+}
+
+.face-status-distance {
+  font-size: 0.54rem;
+  color: var(--outline);
+  letter-spacing: 0.04em;
+}
+
+.face-status-message {
+  margin: 0;
+  font-size: 0.58rem;
+  color: var(--on-surface-variant);
+  line-height: 1.4;
+}
+
+.face-status-initializing .face-status-pill {
+  background: rgb(195 192 255 / 15%);
+  border-color: rgb(195 192 255 / 28%);
+  color: var(--primary);
+}
+
+.face-status-ok .face-status-pill {
+  background: rgb(16 185 129 / 15%);
+  border-color: rgb(16 185 129 / 35%);
+  color: #6ee7b7;
+}
+
+.face-status-warn .face-status-pill {
+  background: rgb(245 158 11 / 16%);
+  border-color: rgb(245 158 11 / 35%);
+  color: #fbbf24;
+}
+
+.face-status-error .face-status-pill {
+  background: rgb(239 68 68 / 16%);
+  border-color: rgb(239 68 68 / 35%);
+  color: #fca5a5;
+}
+
+.face-status-offline .face-status-pill {
+  background: rgb(107 114 128 / 22%);
+  border-color: rgb(107 114 128 / 40%);
+  color: #e5e7eb;
+}
+
 
 
 .live-label {

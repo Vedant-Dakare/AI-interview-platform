@@ -5,6 +5,7 @@ IntervueAI is a full-stack interview platform for conducting role-based technica
 This repository contains:
 - `client/`: React + Vite frontend
 - `server/`: Node.js + Express + Prisma backend
+- `face-service/`: Python FastAPI face verification microservice
 
 ## Table of Contents
 
@@ -65,11 +66,13 @@ This repository contains:
 - Cloudinary (resume storage)
 - OpenAI (evaluation fallback paths exist)
 - ElevenLabs (TTS)
+- face_recognition (Python service for face identity verification)
 
 ## Architecture
 
 - Frontend is a hash-routed single-page app.
 - Backend is a REST API under `/api/*`.
+- Face verification runs as a separate FastAPI microservice under `/face-service`.
 - Prisma maps app models to PostgreSQL.
 - Interview links are token-based:
   - raw token is only sent to the candidate
@@ -99,6 +102,9 @@ AI-interview-platform/
     utils/
     app.js
     package.json
+  face-service/
+    main.py
+    requirements.txt
   README.md
 ```
 
@@ -133,6 +139,7 @@ Set client API base for local backend:
 
 ```dotenv
 VITE_API_BASE_URL=http://localhost:5000
+VITE_FACE_SERVICE_URL=http://localhost:8000
 ```
 
 ### 3. Prepare database
@@ -162,6 +169,18 @@ npm run dev
 
 Open the frontend URL printed by Vite (usually `http://localhost:5173`).
 
+### 5. Run face verification service (separate process)
+
+Terminal 3:
+
+```bash
+cd face-service
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
+```
+
 ## Environment Variables
 
 ### Client
@@ -169,6 +188,7 @@ Open the frontend URL printed by Vite (usually `http://localhost:5173`).
 `client/.env`
 
 - `VITE_API_BASE_URL`: backend base URL (local: `http://localhost:5000`)
+- `VITE_FACE_SERVICE_URL`: face service base URL (local: `http://localhost:8000`)
 
 ### Server
 
@@ -232,8 +252,12 @@ Open the frontend URL printed by Vite (usually `http://localhost:5173`).
 3. If SMTP succeeds, invite email is sent.
 4. If SMTP fails, frontend shows a secure fallback interview link immediately.
 5. Candidate logs in, opens interview link, token is validated, and interview starts.
-6. Candidate answers questions, submits, and ends interview.
-7. Report endpoint returns summary and scoring details.
+6. Frontend registers a single face with the separate face-service before interview monitoring starts.
+7. During interview, frontend sends compressed camera frames every ~2 seconds to face-service for verification.
+8. If no face or multiple faces are detected, frontend logs violations to existing proctoring APIs.
+9. If identity mismatch is detected, frontend triggers existing interview termination API immediately.
+10. Candidate answers questions, submits, and ends interview.
+11. Report endpoint returns summary and scoring details.
 
 ### Admin/Invite Flow
 
@@ -291,6 +315,15 @@ Base URL (local): `http://localhost:5000`
 - `POST /api/proctor/proctor-event` (auth required)
 - `POST /api/proctor/terminate` (auth required)
 - `GET /api/proctor/events/:interviewId` (auth required)
+
+### Face Verification Service (Python FastAPI)
+
+Base URL (local): `http://localhost:8000`
+
+- `GET /health`
+- `POST /register-face` (multipart/form-data: `session_id`, `image`)
+- `POST /verify-face` (multipart/form-data: `session_id`, `image`)
+- `DELETE /sessions/:session_id`
 
 ## Database Model Overview
 
@@ -364,6 +397,12 @@ ALLOW_INTERVIEW_RETAKE=true
 
 - Make sure `CORS_ORIGIN` includes your frontend origin
 - Example: `http://localhost:5173`
+
+### Face verification unavailable
+
+- Ensure `face-service` is running on configured port
+- Check `VITE_FACE_SERVICE_URL` in `client/.env`
+- Interview will continue, but face verification status will show unavailable until service is restored
 
 ## Security Notes
 

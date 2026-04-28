@@ -33,6 +33,11 @@ function InterviewPage({ interviewContext }) {
   const [isLoadingReport, setIsLoadingReport] = useState(false)
   const [reportError, setReportError] = useState('')
   const [redirectCountdown, setRedirectCountdown] = useState(10)
+  const [faceMonitoringState, setFaceMonitoringState] = useState({
+    status: 'initializing',
+    message: 'Face verification pending',
+    distance: null,
+  })
 
   // Cleanup on unmount
   useEffect(() => {
@@ -191,6 +196,14 @@ function InterviewPage({ interviewContext }) {
               ...prev,
               status: 'terminated',
             }))
+          },
+          // onFaceStatusUpdate callback
+          (faceStatus) => {
+            setFaceMonitoringState({
+              status: faceStatus?.status || 'unavailable',
+              message: faceStatus?.message || 'Face verification unavailable',
+              distance: Number.isFinite(faceStatus?.distance) ? faceStatus.distance : null,
+            })
           }
         )
 
@@ -471,6 +484,9 @@ function InterviewPage({ interviewContext }) {
           currentQuestionIndex={interviewState.currentQuestionIndex}
           totalQuestions={interviewState.totalQuestions}
           mediaStream={proctorState.mediaStream}
+          faceMonitoringStatus={faceMonitoringState.status}
+          faceMonitoringMessage={faceMonitoringState.message}
+          faceDistance={faceMonitoringState.distance}
         />
       </main>
     </div>

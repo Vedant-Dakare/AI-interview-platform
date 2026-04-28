@@ -1,6 +1,36 @@
 import CameraPreview from './CameraPreview'
 
-function ProgressPanel({ currentQuestionIndex, totalQuestions, mediaStream }) {
+function ProgressPanel({
+  currentQuestionIndex,
+  totalQuestions,
+  mediaStream,
+  faceMonitoringStatus = 'initializing',
+  faceMonitoringMessage = 'Face verification pending',
+  faceDistance = null,
+}) {
+  const statusLabelMap = {
+    initializing: 'Face Verification Starting',
+    'identity-verified': 'Identity Verified',
+    'face-detected': 'Face Detected',
+    'no-face': 'No Face',
+    'multiple-faces': 'Multiple Faces',
+    mismatch: 'Identity Mismatch',
+    unavailable: 'Face Verification Unavailable',
+  }
+
+  const statusClassMap = {
+    initializing: 'face-status-initializing',
+    'identity-verified': 'face-status-ok',
+    'face-detected': 'face-status-ok',
+    'no-face': 'face-status-warn',
+    'multiple-faces': 'face-status-warn',
+    mismatch: 'face-status-error',
+    unavailable: 'face-status-offline',
+  }
+
+  const statusLabel = statusLabelMap[faceMonitoringStatus] || 'Face Verification Unavailable'
+  const statusClass = statusClassMap[faceMonitoringStatus] || 'face-status-offline'
+
   // Generate dynamic progress steps
   const steps = Array.from({ length: totalQuestions }, (_, i) => ({
     id: i + 1,
@@ -67,6 +97,14 @@ function ProgressPanel({ currentQuestionIndex, totalQuestions, mediaStream }) {
             <span>Camera Status</span>
             <span className="camera-live-dot" />
           </div>
+
+          <div className={`face-status-row ${statusClass}`}>
+            <span className="face-status-pill">{statusLabel}</span>
+            {Number.isFinite(faceDistance) ? (
+              <span className="face-status-distance">Distance: {faceDistance.toFixed(2)}</span>
+            ) : null}
+          </div>
+          <p className="face-status-message">{faceMonitoringMessage}</p>
 
           <div className="camera-frame">
             <CameraPreview mediaStream={mediaStream} inline={true} />
