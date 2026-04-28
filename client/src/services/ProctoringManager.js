@@ -4,14 +4,18 @@
  */
 
 import { getAuthToken } from './authApi'
+import { clearFaceSession, registerFace, verifyFace } from './faceVerificationApi'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
+const FACE_MONITOR_INTERVAL_MS = 2000
+const FACE_ABSENCE_GRACE_STREAK = 2
 
 class ProctoringManager {
-  constructor(interviewId, onWarningUpdate, onTerminated) {
+  constructor(interviewId, onWarningUpdate, onTerminated, onFaceStatusUpdate) {
     this.interviewId = interviewId
     this.onWarningUpdate = onWarningUpdate // Callback: (warningCount) => {}
     this.onTerminated = onTerminated // Callback: (reason) => {}
+    this.onFaceStatusUpdate = onFaceStatusUpdate // Callback: ({ status, message, ...meta }) => {}
 
     this.warningCount = 0
     this.isTerminated = false
@@ -20,6 +24,11 @@ class ProctoringManager {
     this.tabSwitchTimeout = null
     this.hasPendingFullscreenRecovery = false
     this.proctorApiUnauthorized = false
+    this.faceMonitorInterval = null
+    this.faceMonitorInFlight = false
+    this.captureVideo = null
+    this.noFaceStreak = 0
+    this.multipleFaceStreak = 0
 
     // Event listeners references for cleanup
     this.listeners = {}
@@ -37,10 +46,15 @@ class ProctoringManager {
       // Step 1: Request permissions
       await this.requestPermissions()
 
-      // Step 2: Start monitoring
-      this.startMonitoring()
+      // Step 2: Initialize face verification. If service is unavailable,
+      // continue interview with warning instead of hard-failing.
+      await this.registerPrimaryFace()
 
-      // Step 3: Request fullscreen. If blocked by browser gesture rules,
+      // Step 3: Start monitoring
+      this.startMonitoring()
+      this.startFaceMonitoring()
+
+      // Step 4: Request fullscreen. If blocked by browser gesture rules,
       // keep interview running and recover fullscreen on next user interaction.
       const enteredFullscreen = await this.enterFullscreen({ throwOnFailure: false })
       if (!enteredFullscreen) {
@@ -146,6 +160,190 @@ class ProctoringManager {
    */
   getVideoStream() {
     return this.mediaStream
+  }
+
+  emitFaceStatus(status, message, meta = {}) {
+    if (!this.onFaceStatusUpdate) {
+      return
+    }
+
+    this.onFaceStatusUpdate({ status, message, ...meta })
+  }
+
+  async createCaptureVideoElement() {
+    if (this.captureVideo) {
+      return this.captureVideo
+    }
+
+    if (!this.mediaStream) {
+      throw new Error('Camera stream is unavailable for face verification')
+    }
+
+    const video = document.createElement('video')
+    video.autoplay = true
+    video.muted = true
+    video.playsInline = true
+    video.srcObject = this.mediaStream
+
+    await new Promise((resolve, reject) => {
+      const timeoutId = window.setTimeout(() => {
+        cleanup()
+        reject(new Error('Camera preview did not become ready in time'))
+      }, 4000)
+
+      const onReady = () => {
+        cleanup()
+        resolve()
+      }
+
+      const onError = () => {
+        cleanup()
+        reject(new Error('Could not initialize camera preview for verification'))
+      }
+
+      const cleanup = () => {
+        window.clearTimeout(timeoutId)
+        video.removeEventListener('loadeddata', onReady)
+        video.removeEventListener('canplay', onReady)
+        video.removeEventListener('error', onError)
+      }
+
+      video.addEventListener('loadeddata', onReady)
+      video.addEventListener('canplay', onReady)
+      video.addEventListener('error', onError)
+
+      const playResult = video.play()
+      if (playResult?.catch) {
+        playResult.catch(() => {
+          // Some browsers block autoplay in detached elements.
+          // We still continue and rely on events/readiness checks.
+        })
+      }
+    })
+
+    this.captureVideo = video
+    return video
+  }
+
+  async registerPrimaryFace() {
+    this.emitFaceStatus('initializing', 'Verifying your identity...')
+
+    const captureVideo = await this.createCaptureVideoElement()
+
+    try {
+      const response = await registerFace({
+        videoElement: captureVideo,
+        sessionId: this.interviewId,
+      })
+
+      if (response?.status === 'success') {
+        this.noFaceStreak = 0
+        this.multipleFaceStreak = 0
+        this.emitFaceStatus('identity-verified', 'Identity verified')
+        return
+      }
+
+      const faceCount = Number(response?.face_count ?? 0)
+      if (faceCount === 0) {
+        this.emitFaceStatus('no-face', 'No face detected at startup')
+      } else if (faceCount > 1) {
+        this.emitFaceStatus('multiple-faces', 'Multiple faces detected at startup')
+      }
+
+      throw new Error(response?.message || 'Require exactly one face to start the interview')
+    } catch (error) {
+      const message = String(error?.message || '')
+      const isServiceIssue =
+        message.toLowerCase().includes('failed to fetch')
+        || message.toLowerCase().includes('timed out')
+        || message.toLowerCase().includes('network')
+        || message.toLowerCase().includes('service')
+
+      if (isServiceIssue) {
+        this.emitFaceStatus('unavailable', 'Face verification unavailable')
+        return
+      }
+
+      throw new Error(message || 'Unable to verify your face at interview start')
+    }
+  }
+
+  async runFaceVerificationTick() {
+    if (this.faceMonitorInFlight || this.isTerminated || !this.captureVideo) {
+      return
+    }
+
+    this.faceMonitorInFlight = true
+
+    try {
+      const result = await verifyFace({
+        videoElement: this.captureVideo,
+        sessionId: this.interviewId,
+      })
+
+      const faceCount = Number(result?.face_count ?? 0)
+      const isMatch = Boolean(result?.match)
+
+      if (faceCount === 0) {
+        this.noFaceStreak += 1
+        this.multipleFaceStreak = 0
+        this.emitFaceStatus('no-face', 'No face')
+
+        if (this.noFaceStreak >= FACE_ABSENCE_GRACE_STREAK) {
+          await this.recordViolation('NO_FACE', {
+            reason: 'No face detected in verification frame',
+            faceCount,
+          })
+
+          await this.terminate('Interview terminated: no face detected (rule violation)')
+        }
+
+        return
+      }
+
+      if (faceCount > 1) {
+        this.multipleFaceStreak += 1
+        this.noFaceStreak = 0
+        this.emitFaceStatus('multiple-faces', 'Multiple faces detected')
+
+        if (this.multipleFaceStreak >= FACE_ABSENCE_GRACE_STREAK) {
+          await this.recordViolation('MULTIPLE_FACE', {
+            reason: 'Multiple faces detected in verification frame',
+            faceCount,
+          })
+        }
+
+        return
+      }
+
+      this.noFaceStreak = 0
+      this.multipleFaceStreak = 0
+
+      if (!isMatch) {
+        this.emitFaceStatus('mismatch', 'Identity mismatch detected')
+        await this.terminate('Identity mismatch detected during face verification')
+        return
+      }
+
+      this.emitFaceStatus('identity-verified', 'Identity verified', {
+        distance: result?.distance,
+      })
+    } catch (error) {
+      this.emitFaceStatus('unavailable', 'Face verification unavailable')
+      console.warn('[ProctoringManager] Face verification tick failed:', error.message)
+    } finally {
+      this.faceMonitorInFlight = false
+    }
+  }
+
+  startFaceMonitoring() {
+    if (this.faceMonitorInterval) {
+      return
+    }
+
+    this.faceMonitorInterval = window.setInterval(() => {
+      void this.runFaceVerificationTick()
+    }, FACE_MONITOR_INTERVAL_MS)
   }
 
   /**
@@ -446,6 +644,27 @@ class ProctoringManager {
     window.removeEventListener('pointerdown', this.listeners.fullscreenRecover, true)
     window.removeEventListener('keydown', this.listeners.fullscreenRecover, true)
 
+    if (this.faceMonitorInterval) {
+      window.clearInterval(this.faceMonitorInterval)
+      this.faceMonitorInterval = null
+    }
+
+    this.faceMonitorInFlight = false
+    this.noFaceStreak = 0
+    this.multipleFaceStreak = 0
+
+    if (this.captureVideo) {
+      try {
+        this.captureVideo.pause?.()
+        this.captureVideo.srcObject = null
+      } catch {
+        // Ignore cleanup errors.
+      }
+      this.captureVideo = null
+    }
+
+    void clearFaceSession(this.interviewId)
+
     // Stop media stream
     if (this.mediaStream) {
       this.mediaStream.getTracks().forEach((track) => track.stop())
@@ -469,6 +688,7 @@ class ProctoringManager {
       isTerminated: this.isTerminated,
       isFullscreen: this.isFullscreen,
       mediaStream: !!this.mediaStream,
+      faceMonitorActive: !!this.faceMonitorInterval,
     }
   }
 }
