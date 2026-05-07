@@ -9,6 +9,7 @@ import { clearFaceSession, registerFace, verifyFace } from './faceVerificationAp
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 const FACE_MONITOR_INTERVAL_MS = 2000
 const FACE_ABSENCE_GRACE_STREAK = 2
+const FACE_MISMATCH_TERMINATION_MS = 10000
 
 class ProctoringManager {
   constructor(interviewId, onWarningUpdate, onTerminated, onFaceStatusUpdate) {
@@ -29,6 +30,8 @@ class ProctoringManager {
     this.captureVideo = null
     this.noFaceStreak = 0
     this.multipleFaceStreak = 0
+    this.mismatchStreak = 0
+    this.mismatchStartAt = null
 
     // Event listeners references for cleanup
     this.listeners = {}
@@ -287,6 +290,8 @@ class ProctoringManager {
       if (faceCount === 0) {
         this.noFaceStreak += 1
         this.multipleFaceStreak = 0
+        this.mismatchStreak = 0
+        this.mismatchStartAt = null
         this.emitFaceStatus('no-face', 'No face')
 
         if (this.noFaceStreak >= FACE_ABSENCE_GRACE_STREAK) {
@@ -304,6 +309,8 @@ class ProctoringManager {
       if (faceCount > 1) {
         this.multipleFaceStreak += 1
         this.noFaceStreak = 0
+        this.mismatchStreak = 0
+        this.mismatchStartAt = null
         this.emitFaceStatus('multiple-faces', 'Multiple faces detected')
 
         if (this.multipleFaceStreak >= FACE_ABSENCE_GRACE_STREAK) {
@@ -318,13 +325,35 @@ class ProctoringManager {
 
       this.noFaceStreak = 0
       this.multipleFaceStreak = 0
+      this.mismatchStreak = 0
+      this.mismatchStartAt = null
 
       if (!isMatch) {
-        this.emitFaceStatus('mismatch', 'Identity mismatch detected')
-        await this.terminate('Identity mismatch detected during face verification')
+        this.mismatchStreak += 1
+        if (!this.mismatchStartAt) {
+          this.mismatchStartAt = Date.now()
+        }
+
+        const mismatchDurationMs = Date.now() - this.mismatchStartAt
+        this.emitFaceStatus('mismatch', 'Identity mismatch detected', {
+          mismatchStreak: this.mismatchStreak,
+          mismatchDurationMs,
+        })
+
+        if (mismatchDurationMs >= FACE_MISMATCH_TERMINATION_MS) {
+          await this.recordViolation('FACE_MISMATCH', {
+            reason: 'Face verification mismatch detected continuously for threshold',
+            mismatchStreak: this.mismatchStreak,
+            mismatchDurationMs,
+          })
+          await this.terminate('Identity mismatch detected during face verification')
+        }
+
         return
       }
 
+      this.mismatchStreak = 0
+      this.mismatchStartAt = null
       this.emitFaceStatus('identity-verified', 'Identity verified', {
         distance: result?.distance,
       })
@@ -652,6 +681,8 @@ class ProctoringManager {
     this.faceMonitorInFlight = false
     this.noFaceStreak = 0
     this.multipleFaceStreak = 0
+    this.mismatchStreak = 0
+    this.mismatchStartAt = null
 
     if (this.captureVideo) {
       try {

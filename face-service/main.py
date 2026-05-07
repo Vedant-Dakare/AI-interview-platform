@@ -36,8 +36,15 @@ class SessionFaceState:
 
 app = FastAPI(title=APP_TITLE, version="1.0.0")
 
-allowed_origins_raw = os.getenv("FACE_SERVICE_CORS_ORIGINS", "http://localhost:5173")
-allowed_origins = [item.strip() for item in allowed_origins_raw.split(",") if item.strip()]
+allowed_origins_raw = os.getenv(
+    "FACE_SERVICE_CORS_ORIGINS",
+    "http://localhost:5173,http://127.0.0.1:5173",
+)
+allowed_origins_raw = allowed_origins_raw.strip()
+if allowed_origins_raw == "*":
+    allowed_origins = ["*"]
+else:
+    allowed_origins = [item.strip() for item in allowed_origins_raw.split(",") if item.strip()]
 
 app.add_middleware(
     CORSMiddleware,

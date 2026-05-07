@@ -1,8 +1,8 @@
 const FACE_SERVICE_URL = import.meta.env.VITE_FACE_SERVICE_URL || 'http://localhost:8000'
 
-const FRAME_WIDTH = 320
-const FRAME_HEIGHT = 240
-const JPEG_QUALITY = 0.5
+const FRAME_WIDTH = 480
+const FRAME_HEIGHT = 360
+const JPEG_QUALITY = 0.8
 const REQUEST_TIMEOUT_MS = 6000
 
 function waitForVideoReady(videoElement) {
