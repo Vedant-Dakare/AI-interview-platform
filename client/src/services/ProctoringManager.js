@@ -10,6 +10,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 const FACE_MONITOR_INTERVAL_MS = 2000
 const FACE_ABSENCE_GRACE_STREAK = 2
 const FACE_MISMATCH_TERMINATION_MS = 10000
+const TERMINATION_OBJECTS = new Set(['cell phone'])
 
 class ProctoringManager {
   constructor(interviewId, onWarningUpdate, onTerminated, onFaceStatusUpdate) {
@@ -286,6 +287,21 @@ class ProctoringManager {
 
       const faceCount = Number(result?.face_count ?? 0)
       const isMatch = Boolean(result?.match)
+      const violations = Array.isArray(result?.violations) ? result.violations : []
+      const hasTerminationObject = violations.some((item) => TERMINATION_OBJECTS.has(String(item)))
+
+      if (violations.length) {
+        await this.recordViolation('PROHIBITED_OBJECT', {
+          reason: 'Prohibited object detected in verification frame',
+          violations,
+          detectedObjects: result?.objects_detected || [],
+        })
+
+        if (hasTerminationObject) {
+          await this.terminate('Interview terminated: prohibited object detected')
+          return
+        }
+      }
 
       if (faceCount === 0) {
         this.noFaceStreak += 1

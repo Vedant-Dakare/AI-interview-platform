@@ -63,6 +63,9 @@ _mp_face_detection = mp.solutions.face_detection.FaceDetection(
     min_detection_confidence=0.5,
 )
 
+
+## if this detecte wrong object then we can switch to more heavier model
+## like yolov8s  or yolov8m depends on the pc
 _yolo_model = YOLO("yolov8n.pt")
 
 
@@ -268,13 +271,13 @@ async def verify_face(
     objects = _detect_objects(image_rgb)
     boxes = _detect_faces(image_rgb)
 
-    voilations = []
+    violations = []
 
     face_count = len(boxes)
 
-    for obj in object :
-        if obj["object"] in PROHIBITED_OBJECTS:
-            voilations.append(obj["object"])
+    for obj in objects:
+        if obj.get("object") in PROHIBITED_OBJECTS:
+            violations.append(obj["object"])
 
     if face_count == 0:
         return {
@@ -308,8 +311,8 @@ async def verify_face(
         "threshold": _current_threshold(),
 
         "objects_detected" : objects,
-        "violations" : voilations,
-        "suspicious" : len(voilations) > 0,
+        "violations" : violations,
+        "suspicious" : len(violations) > 0,
 
         "liveness": {
             "movement_score": round(movement, 2),
