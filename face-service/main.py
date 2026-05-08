@@ -18,6 +18,7 @@ from PIL import Image
 os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
 
 from deepface import DeepFace
+from ultralytics import YOLO
 
 APP_TITLE = "IntervueAI Face Service"
 DEFAULT_MATCH_THRESHOLD = 0.56
@@ -61,6 +62,8 @@ _mp_face_detection = mp.solutions.face_detection.FaceDetection(
     model_selection=0,
     min_detection_confidence=0.5,
 )
+
+_yolo_model = YOLO("yolov8n.pt")
 
 
 @app.get("/health")
@@ -126,6 +129,36 @@ def _detect_faces(image_rgb: np.ndarray) -> list[tuple[int, int, int, int]]:
         boxes.append((y1, x2, y2, x1))
 
     return boxes
+
+
+def _detect_objects(image_rgb: np.ndarray) -> list[dict[str,Any]]:
+    results = _yolo_model(image_rgb)
+
+    detected_objects = []
+
+    for result in results:
+        boxes = result.boxes
+
+        for box in boxes:
+            cls_id = int(box.cls[0])
+            confidence = float(box.conf[0])
+            
+            ## this _yolo_model.name returns all the name of objects with the index 
+            class_name = _yolo_model.names[cls_id]
+
+            detected_objects.append({
+                "object" : class_name,
+                "confidence" : round(confidence,2)
+            })
+    return detected_objects
+
+
+## if this objects are found then terminate the interview 
+PROHIBITED_OBJECTS = {
+    "cell phone",
+    "laptop",
+    "book"
+}
 
 
 def _current_threshold() -> float:
@@ -232,9 +265,17 @@ async def verify_face(
         raise HTTPException(status_code=404, detail="No registered face for this session")
 
     image_rgb = await _read_image_rgb(image)
+    objects = _detect_objects(image_rgb)
     boxes = _detect_faces(image_rgb)
 
+    voilations = []
+
     face_count = len(boxes)
+
+    for obj in object :
+        if obj["object"] in PROHIBITED_OBJECTS:
+            voilations.append(obj["object"])
+
     if face_count == 0:
         return {
             "face_count": 0,
@@ -265,6 +306,11 @@ async def verify_face(
         "match": match,
         "distance": round(distance, 4) if distance is not None else None,
         "threshold": _current_threshold(),
+
+        "objects_detected" : objects,
+        "violations" : voilations,
+        "suspicious" : len(voilations) > 0,
+
         "liveness": {
             "movement_score": round(movement, 2),
             "movement_detected": bool(movement >= 2.5),
