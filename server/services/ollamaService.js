@@ -14,12 +14,20 @@ function clampPrompt(prompt, maxChars = 4000) {
   return normalized.slice(0, maxChars)
 }
 
-async function callOllama({ prompt, timeoutMs = DEFAULT_TIMEOUT_MS, maxRetries = DEFAULT_MAX_RETRIES }) {
+async function callOllama({ prompt, timeoutMs = DEFAULT_TIMEOUT_MS, maxRetries = DEFAULT_MAX_RETRIES, options = {} }) {
   const safePrompt = clampPrompt(prompt)
   if (!safePrompt) {
     const error = new Error('Ollama prompt is required')
     error.statusCode = 400
     throw error
+  }
+
+  const requestOptions = {
+    temperature: 0.2,
+    top_p: 0.9,
+    repeat_penalty: 1.1,
+    num_predict: 512,
+    ...options,
   }
 
   let lastError = null
@@ -38,12 +46,7 @@ async function callOllama({ prompt, timeoutMs = DEFAULT_TIMEOUT_MS, maxRetries =
           model: OLLAMA_MODEL,
           prompt: safePrompt,
           stream: false,
-          options: {
-            temperature: 0.2,
-            top_p: 0.9,
-            repeat_penalty: 1.1,
-            num_predict: 512,
-          },
+          options: requestOptions,
         }),
         signal: controller.signal,
       })
@@ -76,8 +79,8 @@ async function callOllama({ prompt, timeoutMs = DEFAULT_TIMEOUT_MS, maxRetries =
   throw failure
 }
 
-async function callOllamaJson({ prompt, timeoutMs, maxRetries }) {
-  const content = await callOllama({ prompt, timeoutMs, maxRetries })
+async function callOllamaJson({ prompt, timeoutMs, maxRetries, options }) {
+  const content = await callOllama({ prompt, timeoutMs, maxRetries, options })
   const parsed = extractJsonObject(content)
 
   if (!parsed) {
