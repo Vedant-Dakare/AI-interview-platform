@@ -47,6 +47,8 @@ model Interview {
   id                   Int              @id @default(autoincrement())
   userId               Int
   role                 String
+  interviewMode        String           @default("standard") @map("interview_mode")
+  targetQuestionCount  Int              @default(10) @map("target_question_count")
   currentQuestionIndex Int              @default(0)
   status               String           @default("started")
   warningCount         Int              @default(0)             @map("warning_count")
@@ -57,6 +59,7 @@ model Interview {
   questions            Question[]
   answers              Answer[]
   proctoredEvents      ProctoredEvent[]
+  interviewMemory      InterviewMemory?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -93,6 +96,7 @@ model Answer {
   finalScore      Float?   @map("final_score")
   score           Float?
   feedback        String?
+  evaluationMeta  Json?    @map("evaluation_meta")
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -100,6 +104,20 @@ model Answer {
   question  Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
 
   @@index([interviewId])
+}
+
+model InterviewMemory {
+  id           Int      @id @default(autoincrement())
+  interviewId  Int      @unique @map("interview_id")
+  resumeInsights Json?  @map("resume_insights")
+  memory       Json?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+
+  @@index([interviewId])
+  @@map("interview_memory")
 }
 
 model RoleQuestion {
