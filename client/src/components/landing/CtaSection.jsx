@@ -2,8 +2,10 @@ function CtaSection({ onViewDemo, onRequestAccess }) {
   return (
     <section className="cta-section">
       <div className="cta-card">
-        <div className="cta-overlay" />
+        <div className="cta-overlay" aria-hidden="true" />
+        <div className="cta-glow" aria-hidden="true" />
         <div className="cta-content">
+          <span className="section-eyebrow">Enterprise ready</span>
           <h2>
             Ready to scale your <br />
             engineering team?

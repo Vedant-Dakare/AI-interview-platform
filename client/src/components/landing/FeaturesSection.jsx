@@ -2,6 +2,7 @@ function FeaturesSection() {
   return (
     <section className="features-section">
       <div className="section-intro">
+        <span className="section-eyebrow">Core platform</span>
         <h2>Reinventing the Screening Funnel</h2>
         <p>
           Skip the manual phone screens. Our AI handles the technical deep-dives so
@@ -11,6 +12,7 @@ function FeaturesSection() {
 
       <div className="bento-grid">
         <article className="card voice-card">
+          <div className="card-glow" />
           <div className="voice-left">
             <div className="icon-box blue">
               <span className="material-symbols-outlined">record_voice_over</span>
@@ -48,6 +50,7 @@ function FeaturesSection() {
         </article>
 
         <article className="card eval-card">
+          <div className="card-glow" />
           <div className="icon-box indigo">
             <span className="material-symbols-outlined">psychology</span>
           </div>
@@ -69,6 +72,7 @@ function FeaturesSection() {
         </article>
 
         <article className="card adaptive-card">
+          <div className="card-glow" />
           <div className="icon-box orange">
             <span className="material-symbols-outlined">schema</span>
           </div>
@@ -80,6 +84,7 @@ function FeaturesSection() {
         </article>
 
         <article className="card guard-card">
+          <div className="card-glow" />
           <div className="guard-left">
             <h3>Integrity Guard</h3>
             <p>
