@@ -39,6 +39,22 @@ function InterviewPage({ interviewContext }) {
     distance: null,
   })
 
+  function parseResumeInsights(raw) {
+    if (!raw) {
+      return null
+    }
+
+    if (typeof raw === 'object') {
+      return raw
+    }
+
+    try {
+      return JSON.parse(String(raw))
+    } catch {
+      return null
+    }
+  }
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -159,7 +175,14 @@ function InterviewPage({ interviewContext }) {
 
     try {
       // Step 1: Start interview backend
-      const response = await startInterview(interviewState.role, interviewState.candidateName)
+      const adaptiveContext = interviewContext
+        ? {
+          resumeInsights: parseResumeInsights(interviewContext.resumeInsights),
+          questionPlan: interviewContext.questionPlan || null,
+        }
+        : null
+
+      const response = await startInterview(interviewState.role, interviewState.candidateName, adaptiveContext)
       const { data } = response
       const interviewId = data.interviewId
 
@@ -383,6 +406,24 @@ function InterviewPage({ interviewContext }) {
               <p className="precheck-role-note">Average Score: <strong>{finalReport.averageScore}</strong></p>
               <p className="precheck-role-note">Recommendation: <strong>{finalReport.recommendation}</strong></p>
 
+              {finalReport.technicalScore !== null && finalReport.technicalScore !== undefined ? (
+                <p className="precheck-role-note">Technical Score: <strong>{finalReport.technicalScore}</strong></p>
+              ) : null}
+              {finalReport.communicationScore !== null && finalReport.communicationScore !== undefined ? (
+                <p className="precheck-role-note">Communication Score: <strong>{finalReport.communicationScore}</strong></p>
+              ) : null}
+              {finalReport.problemSolvingScore !== null && finalReport.problemSolvingScore !== undefined ? (
+                <p className="precheck-role-note">Problem Solving Score: <strong>{finalReport.problemSolvingScore}</strong></p>
+              ) : null}
+              {finalReport.cheatingRiskScore !== null && finalReport.cheatingRiskScore !== undefined ? (
+                <p className="precheck-role-note">Cheating Risk Score: <strong>{finalReport.cheatingRiskScore}</strong></p>
+              ) : null}
+              {finalReport.summary ? (
+                <div className="precheck-role-note">
+                  <strong>Summary:</strong> {finalReport.summary}
+                </div>
+              ) : null}
+
               <h3>Strengths</h3>
               <ul className="precheck-list">
                 {Array.isArray(finalReport.strengths) && finalReport.strengths.map((item, index) => (
@@ -466,12 +507,33 @@ function InterviewPage({ interviewContext }) {
           question={interviewState.questions[interviewState.currentQuestionIndex] || null}
           currentQuestionIndex={interviewState.currentQuestionIndex}
           totalQuestions={interviewState.totalQuestions}
-          onAnswerSubmitted={(nextIndex, nextStatus) => {
-            setInterviewState((prev) => ({
-              ...prev,
-              currentQuestionIndex: Number.isInteger(nextIndex) ? nextIndex : prev.currentQuestionIndex,
-              status: nextStatus || prev.status,
-            }))
+          onAnswerSubmitted={(payload) => {
+            setInterviewState((prev) => {
+              const nextIndex = Number.isInteger(payload?.currentQuestionIndex)
+                ? payload.currentQuestionIndex
+                : prev.currentQuestionIndex
+              const nextQuestionText = payload?.nextQuestion
+              const nextQuestionId = payload?.nextQuestionId
+
+              let nextQuestions = prev.questions
+
+              if (nextQuestionText && !nextQuestions.find((item) => item.orderIndex === nextIndex)) {
+                const newQuestion = {
+                  id: nextQuestionId || `adaptive-${nextIndex}`,
+                  questionText: nextQuestionText,
+                  orderIndex: nextIndex,
+                }
+
+                nextQuestions = [...nextQuestions, newQuestion].sort((a, b) => a.orderIndex - b.orderIndex)
+              }
+
+              return {
+                ...prev,
+                currentQuestionIndex: nextIndex,
+                status: payload?.status || prev.status,
+                questions: nextQuestions,
+              }
+            })
           }}
           onInterviewCompleted={() => {
             setInterviewState((prev) => ({

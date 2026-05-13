@@ -1,5 +1,6 @@
 import { buildEmbeddingVector, clampSimilarity, cosineSimilarity } from './embeddingService.js'
 import { callOpenAI, extractJsonObject, isOpenAIEnabled } from './openaiService.js'
+import { callOllamaJson, clampPrompt } from './ollamaService.js'
 
 function toFixedNumber(value, digits = 4) {
   return Number(Number(value || 0).toFixed(digits))
@@ -39,6 +40,133 @@ async function generateEmbedding(text) {
     return embedding.map((value) => Number(value) || 0)
   } catch {
     return buildEmbeddingVector(normalizedText)
+  }
+}
+
+function clampScore(value, min = 0, max = 10) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) {
+    return min
+  }
+
+  return Number(Math.max(min, Math.min(max, numeric)).toFixed(2))
+}
+
+function normalizeStringArray(value) {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  const seen = new Set()
+  return value
+    .map((item) => String(item || '').trim())
+    .filter((item) => item && !seen.has(item.toLowerCase()) && seen.add(item.toLowerCase()))
+}
+
+async function evaluateAdaptiveAnswer({ questionText, candidateAnswerText, resumeInsights, difficulty, topic }) {
+  const answerText = String(candidateAnswerText || '').trim()
+  const question = String(questionText || '').trim()
+
+  if (!answerText || !question) {
+    return {
+      answerEmbedding: [],
+      similarityScore: 0,
+      llmScore: 0,
+      finalScore: 0,
+      feedback: 'No answer captured.',
+      evaluationMeta: {
+        score: 0,
+        technicalScore: 0,
+        communicationScore: 0,
+        problemSolvingScore: 0,
+        confidenceScore: 0,
+        nextDifficulty: 'easy',
+        nextTopic: topic || 'core',
+        strengths: [],
+        weaknesses: ['No response was provided.'],
+      },
+      evaluationProvider: 'ollama',
+    }
+  }
+
+  const resumeSummary = {
+    skills: resumeInsights?.skills || [],
+    frameworks: resumeInsights?.frameworks || [],
+    projects: resumeInsights?.projects || [],
+    domains: resumeInsights?.domains || [],
+    experienceLevel: resumeInsights?.experienceLevel || 'junior',
+  }
+
+  const prompt = clampPrompt([
+    'You are an adaptive technical interview evaluator.',
+    'Evaluate the candidate answer strictly and return JSON only with keys:',
+    'score, technicalScore, communicationScore, problemSolvingScore, confidenceScore, strengths, weaknesses, feedback, nextDifficulty, nextTopic.',
+    'Scores must be 0-10. nextDifficulty must be easy|medium|hard.',
+    'Keep feedback concise and actionable.',
+    '',
+    `ROLE_CONTEXT: ${JSON.stringify(resumeSummary)}`,
+    `TOPIC: ${topic || 'core'}`,
+    `DIFFICULTY: ${difficulty || 'medium'}`,
+    `QUESTION: ${question}`,
+    `ANSWER: ${answerText}`,
+  ].join('\n'), 4000)
+
+  let parsed = null
+  try {
+    parsed = await callOllamaJson({
+      prompt,
+      timeoutMs: Number(process.env.OLLAMA_EVAL_TIMEOUT_MS || 3500),
+      maxRetries: Number(process.env.OLLAMA_EVAL_RETRIES || 0),
+    })
+  } catch {
+    parsed = null
+  }
+
+  const evaluation = parsed || {}
+  const lengthScore = Math.min(10, Math.max(2, Math.round(answerText.length / 80)))
+  const technicalScore = clampScore(evaluation.technicalScore ?? evaluation.score ?? lengthScore)
+  const communicationScore = clampScore(evaluation.communicationScore)
+  const problemSolvingScore = clampScore(evaluation.problemSolvingScore ?? lengthScore)
+  const confidenceScore = clampScore(evaluation.confidenceScore ?? 6)
+  const score = clampScore(evaluation.score ?? technicalScore)
+  const nextDifficulty = ['easy', 'medium', 'hard'].includes(String(evaluation.nextDifficulty || '').toLowerCase())
+    ? String(evaluation.nextDifficulty).toLowerCase()
+    : score >= 7.5
+      ? 'hard'
+      : score >= 5.5
+        ? 'medium'
+        : 'easy'
+  const nextTopic = String(evaluation.nextTopic || topic || 'core').trim()
+  const strengths = normalizeStringArray(evaluation.strengths)
+  const weaknesses = normalizeStringArray(evaluation.weaknesses)
+  const feedback = String(evaluation.feedback || '').trim() || 'Provide more structured reasoning and concrete examples.'
+
+  const [answerEmbedding, referenceEmbedding] = await Promise.all([
+    generateEmbedding(answerText),
+    generateEmbedding(question),
+  ])
+
+  const similarityScore = clampSimilarity(cosineSimilarity(answerEmbedding, referenceEmbedding))
+  const finalScore = clampScore((technicalScore * 0.6) + (communicationScore * 0.2) + (problemSolvingScore * 0.2))
+
+  return {
+    answerEmbedding,
+    similarityScore,
+    llmScore: score,
+    finalScore,
+    feedback,
+    evaluationMeta: {
+      score,
+      technicalScore,
+      communicationScore,
+      problemSolvingScore,
+      confidenceScore,
+      nextDifficulty,
+      nextTopic,
+      strengths,
+      weaknesses,
+    },
+    evaluationProvider: 'ollama',
   }
 }
 
@@ -253,4 +381,95 @@ async function summarizeInterviewPerformance(answerRows) {
   }
 }
 
-export { evaluateInterviewAnswer, summarizeInterviewPerformance }
+function buildAdaptiveSummary(answerRows) {
+  const totals = {
+    technical: 0,
+    communication: 0,
+    problemSolving: 0,
+    confidence: 0,
+    count: 0,
+  }
+  const strengths = []
+  const weaknesses = []
+
+  for (const row of answerRows) {
+    const meta = row?.evaluationMeta || {}
+    if (meta.technicalScore !== undefined) {
+      totals.technical += Number(meta.technicalScore || 0)
+      totals.communication += Number(meta.communicationScore || 0)
+      totals.problemSolving += Number(meta.problemSolvingScore || 0)
+      totals.confidence += Number(meta.confidenceScore || 0)
+      totals.count += 1
+    }
+
+    const rowStrengths = normalizeStringArray(meta.strengths)
+    const rowWeaknesses = normalizeStringArray(meta.weaknesses)
+    strengths.push(...rowStrengths)
+    weaknesses.push(...rowWeaknesses)
+  }
+
+  const avg = (value) => totals.count ? Number((value / totals.count).toFixed(2)) : 0
+  const technicalScore = avg(totals.technical)
+  const communicationScore = avg(totals.communication)
+  const problemSolvingScore = avg(totals.problemSolving)
+  const confidenceScore = avg(totals.confidence)
+  const overallScore = Number(((technicalScore * 0.5) + (communicationScore * 0.2) + (problemSolvingScore * 0.3)).toFixed(2))
+  const cheatingRiskScore = Number((10 - confidenceScore).toFixed(2))
+  const recommendation = overallScore >= 7 ? 'SHORTLIST' : 'REJECT'
+
+  return {
+    overallScore,
+    technicalScore,
+    communicationScore,
+    problemSolvingScore,
+    cheatingRiskScore,
+    strengths: normalizeStringArray(strengths).slice(0, 5),
+    weaknesses: normalizeStringArray(weaknesses).slice(0, 5),
+    recommendation,
+  }
+}
+
+async function summarizeAdaptiveInterviewPerformance(answerRows, resumeInsights) {
+  const fallback = buildAdaptiveSummary(answerRows)
+
+  const compact = answerRows.map((row) => ({
+    question: row?.question?.questionText || '',
+    score: row?.evaluationMeta?.score ?? row?.finalScore ?? row?.score ?? 0,
+    strengths: row?.evaluationMeta?.strengths || [],
+    weaknesses: row?.evaluationMeta?.weaknesses || [],
+    feedback: row?.feedback || '',
+  }))
+
+  const resumeSummary = {
+    skills: resumeInsights?.skills || [],
+    frameworks: resumeInsights?.frameworks || [],
+    projects: resumeInsights?.projects || [],
+    experienceLevel: resumeInsights?.experienceLevel || 'junior',
+  }
+
+  const prompt = clampPrompt([
+    'Summarize the adaptive interview results. Return JSON only with keys:',
+    'strengths, weaknesses, recommendation, summary.',
+    'Keep summary under 4 sentences.',
+    '',
+    `ROLE_CONTEXT: ${JSON.stringify(resumeSummary)}`,
+    `ANSWERS: ${JSON.stringify(compact)}`,
+  ].join('\n'), 4000)
+
+  try {
+    const parsed = await callOllamaJson({ prompt })
+    return {
+      ...fallback,
+      strengths: normalizeStringArray(parsed.strengths).slice(0, 5) || fallback.strengths,
+      weaknesses: normalizeStringArray(parsed.weaknesses).slice(0, 5) || fallback.weaknesses,
+      recommendation: String(parsed.recommendation || fallback.recommendation).toUpperCase() === 'SHORTLIST'
+        ? 'SHORTLIST'
+        : 'REJECT',
+      summary: String(parsed.summary || '').trim() || undefined,
+    }
+  } catch {
+    return fallback
+  }
+}
+
+export { evaluateInterviewAnswer, evaluateAdaptiveAnswer, summarizeInterviewPerformance, summarizeAdaptiveInterviewPerformance }

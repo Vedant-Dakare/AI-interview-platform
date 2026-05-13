@@ -692,7 +692,7 @@ function InterviewWorkspace({
       setIsAnswered(true)
 
       if (payload.hasNextQuestion) {
-        onAnswerSubmitted?.(payload.currentQuestionIndex, payload.status)
+        onAnswerSubmitted?.(payload)
       } else {
         setVoiceState('speaking')
         await speakText('Thank you, your interview is completed.')
