@@ -2,6 +2,7 @@ import pdfParse from 'pdf-parse'
 import asyncHandler from '../middleware/asyncHandler.js'
 import prisma from '../prisma/client.js'
 import { storeResumeFile } from '../services/resumeStorageService.js'
+import { extractResumeInsights } from '../services/resumeInsightsService.js'
 
 const uploadResume = asyncHandler(async (req, res) => {
   if (!req.file) {
@@ -40,6 +41,13 @@ const uploadResume = asyncHandler(async (req, res) => {
     throw new Error('Unable to store resume file. Please try again shortly.')
   }
 
+  let resumeInsights = null
+  try {
+    resumeInsights = await extractResumeInsights(extractedText)
+  } catch {
+    resumeInsights = null
+  }
+
   const resume = await prisma.resume.create({
     data: {
       userId: req.user.id,
@@ -54,6 +62,7 @@ const uploadResume = asyncHandler(async (req, res) => {
       id: resume.id,
       fileUrl: resume.fileUrl,
       extractedTextLength: extractedText.length,
+      resumeInsights,
       createdAt: resume.createdAt,
     },
   })

@@ -2,6 +2,7 @@ import pdfParse from 'pdf-parse'
 import asyncHandler from '../middleware/asyncHandler.js'
 import prisma from '../prisma/client.js'
 import { createInterviewInvite, normalizeRole } from '../services/interviewInviteService.js'
+import { extractResumeInsights } from '../services/resumeInsightsService.js'
 import { storeResumeFile } from '../services/resumeStorageService.js'
 
 function isValidEmail(email) {
@@ -64,6 +65,7 @@ const applyForInterview = asyncHandler(async (req, res) => {
   }
 
   let extractedText = ''
+  let resumeInsights = null
   try {
     const parsedPdf = await pdfParse(fileBuffer)
     extractedText = (parsedPdf.text || '').trim()
@@ -73,6 +75,18 @@ const applyForInterview = asyncHandler(async (req, res) => {
       role: normalizedRole,
       error: error instanceof Error ? error.message : String(error),
     })
+  }
+
+  if (extractedText) {
+    try {
+      resumeInsights = await extractResumeInsights(extractedText)
+    } catch (error) {
+      console.warn('Resume insight extraction failed, continuing without insights', {
+        email: normalizedEmail,
+        role: normalizedRole,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
 
   let storedResume
@@ -98,7 +112,7 @@ const applyForInterview = asyncHandler(async (req, res) => {
       email: normalizedEmail,
       role: normalizedRole,
       resumeFileUrl: storedResume.fileUrl,
-      resumeInsights: extractedText || null,
+      resumeInsights: resumeInsights ? JSON.stringify(resumeInsights) : null,
       applicationStatus: 'submitted',
     },
   })

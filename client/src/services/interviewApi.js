@@ -84,8 +84,13 @@ async function requestFormDataWithAuth(path, formData) {
   return data
 }
 
-export async function startInterview(role, candidateName) {
-  return requestWithAuth('/api/interview/start', 'POST', { role, candidateName })
+export async function startInterview(role, candidateName, context = null) {
+  return requestWithAuth('/api/interview/start', 'POST', {
+    role,
+    candidateName,
+    resumeInsights: context?.resumeInsights ?? null,
+    questionPlan: context?.questionPlan ?? null,
+  })
 }
 
 export async function getRoleQuestions(role) {
