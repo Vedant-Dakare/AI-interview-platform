@@ -4,6 +4,8 @@ import dotenv from 'dotenv'
 import express from 'express'
 import rateLimit from 'express-rate-limit'
 import helmet from 'helmet'
+import cookieParser from 'cookie-parser'
+import passport from 'passport'
 import authRoutes from './routes/authRoutes.js'
 import applicationRoutes from './routes/applicationRoutes.js'
 import interviewRoutes from './routes/interviewRoutes.js'
@@ -14,10 +16,15 @@ import { errorHandler, notFound } from './middleware/errorMiddleware.js'
 import prisma from './prisma/client.js'
 import { assertCloudinaryConfig } from './services/resumeStorageService.js'
 import { retryPendingInviteEmails } from './services/interviewInviteService.js'
+import { configurePassport } from './config/passport.js'
 
 dotenv.config({ override: true })
 
 const app = express()
+
+app.set('trust proxy', 1)
+
+configurePassport()
 
 const inviteEmailRetryIntervalMs = Number(process.env.INVITE_EMAIL_RETRY_INTERVAL_MS || 300000)
 const inviteEmailRetryBatchSize = Number(process.env.INVITE_EMAIL_RETRY_BATCH_SIZE || 25)
@@ -47,6 +54,7 @@ const corsOptions = {
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-admin-api-key'],
+  credentials: true,
   optionsSuccessStatus: 204,
 }
 
@@ -67,6 +75,8 @@ app.options('*', cors(corsOptions))
 app.use(compression())
 app.use(express.json({ limit: '1mb' }))
 app.use(express.urlencoded({ extended: true }))
+app.use(cookieParser())
+app.use(passport.initialize())
 
 app.get('/api/health', (req, res) => {
   res.status(200).json({

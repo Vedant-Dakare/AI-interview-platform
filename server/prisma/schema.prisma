@@ -23,11 +23,16 @@ model User {
   id         Int         @id @default(autoincrement())
   name       String
   email      String      @unique
-  password   String
+  password   String?
+  provider   String?
+  providerId String?
+  avatarUrl  String?
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
   resumes    Resume[]
   interviews Interview[]
+
+  @@unique([provider, providerId])
 }
 
 model Resume {

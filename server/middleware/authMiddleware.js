@@ -3,14 +3,15 @@ import asyncHandler from './asyncHandler.js'
 import prisma from '../prisma/client.js'
 
 const protect = asyncHandler(async (req, res, next) => {
-  const authHeader = req.headers.authorization
+  const authHeader = req.headers.authorization || ''
+  const headerToken = authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null
+  const cookieToken = req.cookies?.['intervueai-token']
+  const token = headerToken || cookieToken
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (!token) {
     res.status(401)
     throw new Error('Unauthorized: token missing')
   }
-
-  const token = authHeader.split(' ')[1]
   const jwtSecret = process.env.JWT_SECRET
 
   if (!jwtSecret) {
@@ -33,6 +34,8 @@ const protect = asyncHandler(async (req, res, next) => {
         id: true,
         name: true,
         email: true,
+        avatarUrl: true,
+        provider: true,
         createdAt: true,
         updatedAt: true,
       },
