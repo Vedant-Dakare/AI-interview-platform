@@ -1,19 +1,9 @@
-import { getAuthToken } from './authApi'
-
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
 async function requestWithAuth(path, method = 'GET') {
-  const token = getAuthToken()
-
-  if (!token) {
-    throw new Error('Please sign in to continue')
-  }
-
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method,
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+    credentials: 'include',
   })
 
   const data = await response.json().catch(() => ({}))

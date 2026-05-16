@@ -1,23 +1,15 @@
-import { getAuthToken } from './authApi'
-
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
 async function requestWithAuth(path, method = 'GET', body = null) {
-  const token = getAuthToken()
-
-  if (!token) {
-    throw new Error('Please sign in to continue')
-  }
-
   const options = {
     method,
     headers: {
-      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
     },
+    credentials: 'include',
   }
 
   if (body) {
-    options.headers['Content-Type'] = 'application/json'
     options.body = JSON.stringify(body)
   }
 
@@ -32,17 +24,10 @@ async function requestWithAuth(path, method = 'GET', body = null) {
 }
 
 async function requestBinaryWithAuth(path, method = 'GET', body = null) {
-  const token = getAuthToken()
-
-  if (!token) {
-    throw new Error('Please sign in to continue')
-  }
-
   const options = {
     method,
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+    headers: {},
+    credentials: 'include',
   }
 
   if (body) {
@@ -61,17 +46,9 @@ async function requestBinaryWithAuth(path, method = 'GET', body = null) {
 }
 
 async function requestFormDataWithAuth(path, formData) {
-  const token = getAuthToken()
-
-  if (!token) {
-    throw new Error('Please sign in to continue')
-  }
-
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+    credentials: 'include',
     body: formData,
   })
 

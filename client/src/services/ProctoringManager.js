@@ -3,10 +3,8 @@
  * Handles: Camera/Mic permissions, fullscreen enforcement, violation detection, warning system
  */
 
-import { getAuthToken } from './authApi'
 import { clearFaceSession, registerFace, verifyFace } from './faceVerificationApi'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 const FACE_MONITOR_INTERVAL_MS = 2000
 const FACE_ABSENCE_GRACE_STREAK = 2
 const FACE_MISMATCH_TERMINATION_MS = 10000
@@ -590,14 +588,12 @@ class ProctoringManager {
     this.lastViolationTime[type] = now
 
     try {
-      const token = getAuthToken()
-
       const response = await fetch(`${API_BASE_URL}/api/proctor/proctor-event`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
+        credentials: 'include',
         body: JSON.stringify({
           interviewId: this.interviewId,
           eventType: type,
@@ -647,14 +643,12 @@ class ProctoringManager {
     this.stopMonitoring()
 
     try {
-      const token = getAuthToken()
-
       const response = await fetch(`${API_BASE_URL}/api/proctor/terminate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
+        credentials: 'include',
         body: JSON.stringify({
           interviewId: this.interviewId,
           reason,
