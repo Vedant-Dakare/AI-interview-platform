@@ -31,7 +31,7 @@ function AuthCallbackPage({ onBackHome }) {
           (pendingInterview ? `#/interview/${pendingInterview}` : '') ||
           redirect ||
           localStorage.getItem('auth-redirect') ||
-          '#/interview'
+          '#/'
         localStorage.removeItem('auth-redirect')
         if (pendingInterview) {
           localStorage.removeItem('pending-interview-token')

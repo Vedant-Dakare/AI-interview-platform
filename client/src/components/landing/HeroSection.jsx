@@ -1,4 +1,4 @@
-function HeroSection({ onStartInterview }) {
+function HeroSection() {
   return (
     <section className="hero-section">
       <div className="hero-ambient" aria-hidden="true">
@@ -28,10 +28,6 @@ function HeroSection({ onStartInterview }) {
           </p>
 
           <div className="hero-actions">
-            <button onClick={onStartInterview} type="button" className="btn-hero-primary">
-              Start Interview
-              <span className="material-symbols-outlined">arrow_forward</span>
-            </button>
             <button type="button" className="btn-hero-secondary">
               For Recruiters
             </button>

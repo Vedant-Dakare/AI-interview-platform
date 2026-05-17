@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext'
 
 const THEME_STORAGE_KEY = 'intervueai-theme'
 
-function TopNavBar({ onGetDemo, onSignIn }) {
+function TopNavBar({ onSignIn }) {
   const { user, isAuthenticated, logout } = useAuth()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [isProfileOpen, setIsProfileOpen] = useState(false)
@@ -117,9 +117,6 @@ function TopNavBar({ onGetDemo, onSignIn }) {
               </div>
             </div>
           )}
-          <button type="button" className="btn-primary-sm" onClick={onGetDemo}>
-            Get Demo
-          </button>
           <button
             type="button"
             className="menu-toggle"
@@ -146,9 +143,6 @@ function TopNavBar({ onGetDemo, onSignIn }) {
               Sign In
             </button>
           ) : null}
-          <button type="button" className="btn-primary-sm" onClick={onGetDemo}>
-            Get Demo
-          </button>
         </div>
       </div>
     </nav>

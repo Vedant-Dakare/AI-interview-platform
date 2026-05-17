@@ -15,6 +15,7 @@ import {
   applyQuestionToMemory,
   updateMemoryWithEvaluation,
 } from '../services/adaptiveInterviewService.js'
+import { hashInterviewToken } from '../utils/interviewToken.js'
 
 let cachedAnswerColumns = null
 
@@ -98,6 +99,33 @@ function parseResumeInsights(raw) {
   }
 }
 
+function getInviteValidationState(invite) {
+  if (!invite) {
+    return { valid: false, statusCode: 404, message: 'Interview link is invalid or expired' }
+  }
+
+  if (!invite.interviewTokenHash) {
+    return { valid: false, statusCode: 404, message: 'Interview link is invalid or expired' }
+  }
+
+  if (invite.status === 'completed') {
+    return { valid: false, statusCode: 409, message: 'Interview already completed' }
+  }
+
+  if (invite.tokenExpiry < new Date()) {
+    return { valid: false, statusCode: 410, message: 'Interview link expired' }
+  }
+
+  return { valid: true }
+}
+
+function requireSameIdentity(inviteEmail, loggedInEmail, res) {
+  if (!loggedInEmail || inviteEmail.toLowerCase() !== loggedInEmail.toLowerCase()) {
+    res.status(403)
+    throw new Error('This interview link belongs to a different account')
+  }
+}
+
 async function getInterviewMemory(interviewId) {
   return prisma.interviewMemory.findUnique({
     where: { interviewId },
@@ -163,13 +191,46 @@ async function getOwnedInterviewOrFail(interviewId, userId) {
 }
 
 const startInterview = asyncHandler(async (req, res) => {
+  const inviteToken = req.body?.inviteToken
+  if (!inviteToken || typeof inviteToken !== 'string') {
+    res.status(403)
+    throw new Error('Interview link is required to start an interview')
+  }
+
+  const invite = await prisma.interviewInvite.findUnique({
+    where: {
+      interviewTokenHash: hashInterviewToken(inviteToken),
+    },
+  })
+
+  const validation = getInviteValidationState(invite)
+  if (!validation.valid) {
+    res.status(validation.statusCode)
+    throw new Error(validation.message)
+  }
+
+  requireSameIdentity(invite.email, req.user?.email, res)
+
+  if (!invite.startedAt) {
+    await prisma.interviewInvite.update({
+      where: { id: invite.id },
+      data: { startedAt: new Date() },
+    })
+  }
+
   const normalizedRole = normalizeRole(req.body?.role)
-  const resumeInsights = parseResumeInsights(req.body?.resumeInsights)
+  const inviteResumeInsights = parseResumeInsights(invite.resumeInsights)
+  const resumeInsights = parseResumeInsights(req.body?.resumeInsights) || inviteResumeInsights
   const useAdaptiveMode = Boolean(resumeInsights)
 
   if (!normalizedRole) {
     res.status(400)
     throw new Error('role must be one of: backend, dsa, ml')
+  }
+
+  if (invite.role && normalizedRole !== invite.role) {
+    res.status(403)
+    throw new Error('Interview role does not match the invitation')
   }
 
   const existingCompletedInterview = await prisma.interview.findFirst({

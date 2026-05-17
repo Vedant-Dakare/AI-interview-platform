@@ -6,7 +6,7 @@ import ProctoringWarnings from './ProctoringWarnings'
 import { getInterviewReport, startInterview } from '../../services/interviewApi'
 import ProctoringManager from '../../services/ProctoringManager'
 
-function InterviewPage({ interviewContext }) {
+function InterviewPage({ interviewContext, interviewToken }) {
   const [hasAcceptedChecklist, setHasAcceptedChecklist] = useState(false)
   const [hasStartedInterview, setHasStartedInterview] = useState(false)
   const [permissionError, setPermissionError] = useState(null)
@@ -169,6 +169,11 @@ function InterviewPage({ interviewContext }) {
       return
     }
 
+    if (!interviewToken) {
+      setPermissionError('Interview link required to start this session.')
+      return
+    }
+
     setPermissionError(null)
     setHasStartedInterview(true)
     setInterviewState((prev) => ({ ...prev, status: 'loading' }))
@@ -182,7 +187,12 @@ function InterviewPage({ interviewContext }) {
         }
         : null
 
-      const response = await startInterview(interviewState.role, interviewState.candidateName, adaptiveContext)
+      const response = await startInterview(
+        interviewState.role,
+        interviewState.candidateName,
+        adaptiveContext,
+        interviewToken,
+      )
       const { data } = response
       const interviewId = data.interviewId
 

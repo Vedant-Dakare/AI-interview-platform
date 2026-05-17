@@ -86,7 +86,7 @@ function AuthPage({ mode = 'login', onSuccess, onSwitchToSignup, onSwitchToLogin
     setErrorMessage('')
     setOauthLoading(provider)
 
-    const redirectPath = localStorage.getItem('auth-redirect') || window.location.hash || '#/interview'
+    const redirectPath = localStorage.getItem('auth-redirect') || window.location.hash || '#/'
     const oauthUrl = getOAuthUrl(provider, redirectPath)
     window.location.href = oauthUrl
   }

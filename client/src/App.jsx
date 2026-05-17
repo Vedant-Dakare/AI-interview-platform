@@ -66,7 +66,7 @@ function App() {
   const [interviewToken, setInterviewToken] = useState(extractInterviewToken(window.location.hash || '#/'))
   const [interviewLinkState, setInterviewLinkState] = useState({ status: 'idle', error: '', context: null })
 
-  const protectedRoutes = new Set(['interview', 'apply', 'dashboard', 'reports', 'analytics'])
+  const protectedRoutes = new Set(['apply', 'dashboard', 'reports', 'analytics'])
 
   useEffect(() => {
     function handleHashChange() {
@@ -77,17 +77,6 @@ function App() {
     window.addEventListener('hashchange', handleHashChange)
     return () => window.removeEventListener('hashchange', handleHashChange)
   }, [])
-
-  function openInterviewPage() {
-    if (!isAuthenticated) {
-      localStorage.setItem('auth-redirect', '#/interview')
-      openLoginPage()
-      return
-    }
-
-    window.location.hash = '/interview'
-    setRoute('interview')
-  }
 
   function openApplyPage() {
     if (!isAuthenticated) {
@@ -128,12 +117,12 @@ function App() {
       const cleanedTarget = redirectTarget.startsWith('#')
         ? redirectTarget.slice(1)
         : redirectTarget
-      window.location.hash = cleanedTarget
+      window.location.hash = cleanedTarget === '/interview' ? '/' : cleanedTarget
       return
     }
 
-    window.location.hash = '/interview'
-    setRoute('interview')
+    window.location.hash = '/'
+    setRoute('landing')
   }
 
   useEffect(() => {
@@ -204,14 +193,20 @@ function App() {
     }
 
     if (protectedRoutes.has(route) && !isAuthenticated) {
-      localStorage.setItem('auth-redirect', window.location.hash || '#/interview')
+      localStorage.setItem('auth-redirect', window.location.hash || '#/')
       setRoute('login')
       window.location.hash = '/login'
     }
   }, [route, isAuthenticated, isInitializing])
 
   if (route === 'interview') {
-    return <InterviewPage />
+    return (
+      <ProtectedPlaceholder
+        title="Interview link required"
+        description="This interview can only be started from a valid invitation link. Please use the link sent to your email."
+        onBackHome={openLandingPage}
+      />
+    )
   }
 
   if (route === 'interview-link') {
@@ -237,7 +232,7 @@ function App() {
     }
 
     if (interviewLinkState.status === 'ready') {
-      return <InterviewPage interviewContext={interviewLinkState.context} />
+      return <InterviewPage interviewContext={interviewLinkState.context} interviewToken={interviewToken} />
     }
   }
 
@@ -302,11 +297,7 @@ function App() {
   }
 
   return (
-    <LandingPage
-      onOpenInterview={openInterviewPage}
-      onOpenLogin={openLoginPage}
-      onOpenApply={openApplyPage}
-    />
+    <LandingPage onOpenLogin={openLoginPage} onOpenApply={openApplyPage} />
   )
 }
 

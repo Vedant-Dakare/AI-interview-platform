@@ -60,7 +60,8 @@ export function getOAuthUrl(provider, redirectPath = '') {
 export function parseOAuthCallback(hashValue = window.location.hash || '') {
   const hash = String(hashValue)
   const [, queryString = ''] = hash.split('?')
-  const params = new URLSearchParams(queryString)
+  const fallbackQuery = window.location.search ? window.location.search.replace(/^\?/, '') : ''
+  const params = new URLSearchParams(queryString || fallbackQuery)
   const redirect = params.get('redirect')
   const error = params.get('error')
   const success = params.get('success')

@@ -1,4 +1,4 @@
-function CtaSection({ onViewDemo, onRequestAccess }) {
+function CtaSection({ onRequestAccess }) {
   return (
     <section className="cta-section">
       <div className="cta-card">
@@ -16,9 +16,6 @@ function CtaSection({ onViewDemo, onRequestAccess }) {
           <div className="cta-actions">
             <button type="button" className="cta-primary" onClick={onRequestAccess}>
               Request Access
-            </button>
-            <button type="button" className="cta-secondary" onClick={onViewDemo}>
-              View Demo
             </button>
           </div>
         </div>

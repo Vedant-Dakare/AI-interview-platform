@@ -4,7 +4,7 @@ import FeaturesSection from './FeaturesSection'
 import CtaSection from './CtaSection'
 import SiteFooter from './SiteFooter'
 
-function LandingPage({ onOpenInterview, onOpenLogin, onOpenApply }) {
+function LandingPage({ onOpenLogin, onOpenApply }) {
   return (
     <div className="landing-page">
       <div className="landing-backdrop" aria-hidden="true">
@@ -14,11 +14,11 @@ function LandingPage({ onOpenInterview, onOpenLogin, onOpenApply }) {
         <div className="backdrop-glow glow-three" />
         <div className="backdrop-noise" />
       </div>
-      <TopNavBar onGetDemo={onOpenInterview} onSignIn={onOpenLogin} />
+      <TopNavBar onSignIn={onOpenLogin} />
       <main className="landing-main">
-        <HeroSection onStartInterview={onOpenInterview} />
+        <HeroSection />
         <FeaturesSection />
-        <CtaSection onViewDemo={onOpenInterview} onRequestAccess={onOpenApply} />
+        <CtaSection onRequestAccess={onOpenApply} />
       </main>
       <SiteFooter />
     </div>

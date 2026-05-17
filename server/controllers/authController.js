@@ -197,11 +197,19 @@ const oauthSuccessRedirect = asyncHandler(async (req, res) => {
   const state = parseOAuthState(req.query.state)
   const redirectPath = typeof state.redirect === 'string' ? state.redirect : ''
 
-  const redirectUrl = new URL(`${baseUrl}/#/auth/callback`)
-  redirectUrl.searchParams.set('success', '1')
+  const redirectParams = new URLSearchParams()
+  redirectParams.set('success', '1')
   if (redirectPath) {
-    redirectUrl.searchParams.set('redirect', redirectPath)
+    redirectParams.set('redirect', redirectPath)
   }
+
+  const redirectUrl = new URL(baseUrl)
+  redirectUrl.hash = `/auth/callback?${redirectParams.toString()}`
+
+  console.log('OAuth callback redirect', {
+    redirect: redirectPath,
+    url: redirectUrl.toString(),
+  })
 
   res.redirect(redirectUrl.toString())
 })
