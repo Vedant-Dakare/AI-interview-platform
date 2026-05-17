@@ -1,3 +1,5 @@
+import MagneticHover from './motion/MagneticHover'
+
 function FeaturesSection() {
   return (
     <section className="features-section">
@@ -11,7 +13,7 @@ function FeaturesSection() {
       </div>
 
       <div className="bento-grid">
-        <article className="card voice-card">
+        <MagneticHover block tilt maxMove={8} maxRotate={1.2} className="card voice-card">
           <div className="card-glow" />
           <div className="voice-left">
             <div className="icon-box blue">
@@ -47,9 +49,9 @@ function FeaturesSection() {
               </p>
             </div>
           </div>
-        </article>
+        </MagneticHover>
 
-        <article className="card eval-card">
+        <MagneticHover block tilt maxMove={8} maxRotate={1.2} className="card eval-card">
           <div className="card-glow" />
           <div className="icon-box indigo">
             <span className="material-symbols-outlined">psychology</span>
@@ -69,9 +71,9 @@ function FeaturesSection() {
               <div className="accuracy-fill" />
             </div>
           </div>
-        </article>
+        </MagneticHover>
 
-        <article className="card adaptive-card">
+        <MagneticHover block tilt maxMove={8} maxRotate={1.2} className="card adaptive-card">
           <div className="card-glow" />
           <div className="icon-box orange">
             <span className="material-symbols-outlined">schema</span>
@@ -81,9 +83,9 @@ function FeaturesSection() {
             The AI dynamically adjusts difficulty based on candidate performance,
             ensuring a fair yet rigorous assessment of their true ceiling.
           </p>
-        </article>
+        </MagneticHover>
 
-        <article className="card guard-card">
+        <MagneticHover block tilt maxMove={8} maxRotate={1.2} className="card guard-card">
           <div className="card-glow" />
           <div className="guard-left">
             <h3>Integrity Guard</h3>
@@ -106,7 +108,7 @@ function FeaturesSection() {
               </div>
             </div>
           </div>
-        </article>
+        </MagneticHover>
       </div>
     </section>
   )

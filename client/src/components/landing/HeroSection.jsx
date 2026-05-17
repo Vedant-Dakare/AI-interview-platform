@@ -1,3 +1,6 @@
+import MagneticHover from './motion/MagneticHover'
+import MouseParallaxLayer from './motion/MouseParallaxLayer'
+
 function HeroSection() {
   return (
     <section className="hero-section">
@@ -9,7 +12,8 @@ function HeroSection() {
       </div>
 
       <div className="hero-grid">
-        <div className="hero-content">
+        <MouseParallaxLayer className="hero-parallax" strength={0.5} maxOffset={7}>
+          <div className="hero-content">
           <div className="beta-pill">
             <span className="pulse-dot" />
             <span>Now in Enterprise Beta</span>
@@ -28,27 +32,35 @@ function HeroSection() {
           </p>
 
           <div className="hero-actions">
-            <button type="button" className="btn-hero-secondary">
-              For Recruiters
-            </button>
+            <MagneticHover>
+              <button type="button" className="btn-hero-secondary">
+                For Recruiters
+              </button>
+            </MagneticHover>
           </div>
 
           <div className="hero-stats">
-            <div className="stat-card">
-              <span className="stat-label">Average time saved</span>
-              <strong>12.4 hrs</strong>
-              <span className="stat-note">per hiring loop</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Bias reduction</span>
-              <strong>94%</strong>
-              <span className="stat-note">consistent scoring</span>
-            </div>
-            <div className="stat-card">
-              <span className="stat-label">Candidate NPS</span>
-              <strong>+68</strong>
-              <span className="stat-note">top-tier UX</span>
-            </div>
+            <MagneticHover block maxMove={4}>
+              <div className="stat-card">
+                <span className="stat-label">Average time saved</span>
+                <strong>12.4 hrs</strong>
+                <span className="stat-note">per hiring loop</span>
+              </div>
+            </MagneticHover>
+            <MagneticHover block maxMove={4}>
+              <div className="stat-card">
+                <span className="stat-label">Bias reduction</span>
+                <strong>94%</strong>
+                <span className="stat-note">consistent scoring</span>
+              </div>
+            </MagneticHover>
+            <MagneticHover block maxMove={4}>
+              <div className="stat-card">
+                <span className="stat-label">Candidate NPS</span>
+                <strong>+68</strong>
+                <span className="stat-note">top-tier UX</span>
+              </div>
+            </MagneticHover>
           </div>
 
           <div className="trusted-row">
@@ -60,50 +72,53 @@ function HeroSection() {
             </div>
           </div>
         </div>
+        </MouseParallaxLayer>
 
-        <div className="hero-visual-wrap">
-          <div className="hero-visual-card">
-            <div className="hero-visual-glow" />
-            <div className="hero-visual-grain" />
+        <MouseParallaxLayer className="hero-parallax hero-visual-parallax" strength={0.7} maxOffset={12}>
+          <div className="hero-visual-wrap">
+            <div className="hero-visual-card">
+              <div className="hero-visual-glow" />
+              <div className="hero-visual-grain" />
 
-            <div className="hero-visual-content">
-              <div className="ai-orbit">
-                <div className="ai-ring ring-outer" />
-                <div className="ai-ring ring-mid" />
-                <div className="ai-ring ring-inner" />
-                <div className="ai-core">
-                  <span className="material-symbols-outlined">graphic_eq</span>
+              <div className="hero-visual-content">
+                <div className="ai-orbit">
+                  <div className="ai-ring ring-outer" />
+                  <div className="ai-ring ring-mid" />
+                  <div className="ai-ring ring-inner" />
+                  <div className="ai-core">
+                    <span className="material-symbols-outlined">graphic_eq</span>
+                  </div>
+                  <div className="ai-status">AI ANALYZING RESPONSE...</div>
                 </div>
-                <div className="ai-status">AI ANALYZING RESPONSE...</div>
-              </div>
 
-              <div className="signal-stack">
-                <div className="signal-row">
-                  <span>Speech cadence</span>
-                  <div className="signal-track"><div className="signal-fill s1" /></div>
+                <div className="signal-stack">
+                  <div className="signal-row">
+                    <span>Speech cadence</span>
+                    <div className="signal-track"><div className="signal-fill s1" /></div>
+                  </div>
+                  <div className="signal-row">
+                    <span>Technical depth</span>
+                    <div className="signal-track"><div className="signal-fill s2" /></div>
+                  </div>
+                  <div className="signal-row">
+                    <span>Confidence score</span>
+                    <div className="signal-track"><div className="signal-fill s3" /></div>
+                  </div>
                 </div>
-                <div className="signal-row">
-                  <span>Technical depth</span>
-                  <div className="signal-track"><div className="signal-fill s2" /></div>
-                </div>
-                <div className="signal-row">
-                  <span>Confidence score</span>
-                  <div className="signal-track"><div className="signal-fill s3" /></div>
-                </div>
-              </div>
 
-              <div className="waveform">
-                <span />
-                <span />
-                <span />
-                <span />
-                <span />
-                <span />
-                <span />
+                <div className="waveform">
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        </MouseParallaxLayer>
       </div>
     </section>
   )

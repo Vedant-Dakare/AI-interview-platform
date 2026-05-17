@@ -83,6 +83,144 @@ button {
   inset: 0;
   z-index: 0;
   pointer-events: none;
+  overflow: hidden;
+}
+
+.interactive-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.parallax-layer {
+  will-change: transform;
+  transform: translate3d(0, 0, 0);
+}
+
+.interactive-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.interactive-orb {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(140px);
+  opacity: 0.4;
+  animation: orbDrift 18s ease-in-out infinite;
+  will-change: transform;
+}
+
+.orb-a {
+  width: 520px;
+  height: 520px;
+  top: -160px;
+  left: -60px;
+  background: rgba(110, 98, 255, 0.28);
+  animation-duration: 22s;
+}
+
+.orb-b {
+  width: 480px;
+  height: 480px;
+  bottom: -200px;
+  right: 12%;
+  background: rgba(79, 140, 255, 0.24);
+  animation-duration: 26s;
+  animation-delay: -6s;
+}
+
+.orb-c {
+  width: 320px;
+  height: 320px;
+  top: 35%;
+  right: 28%;
+  background: rgba(139, 124, 255, 0.2);
+  animation-duration: 20s;
+  animation-delay: -10s;
+}
+
+.interactive-grid {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(148, 163, 184, 0.12) 1px, transparent 1px);
+  background-size: 80px 80px;
+  mask-image: radial-gradient(circle at 30% 20%, #000 0%, transparent 70%);
+  opacity: 0.18;
+}
+
+[data-theme='light'] .interactive-grid {
+  opacity: 0.12;
+}
+
+.particle-field {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+}
+
+.cursor-particles {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+  z-index: 1;
+  will-change: transform, opacity;
+}
+
+.cursor-particle {
+  position: absolute;
+  border-radius: 999px;
+  background: var(--cursor-color);
+  transform: rotate(var(--cursor-angle)) translate3d(var(--cursor-radius), 0, 0);
+  animation: cursorParticleDrift 5s ease-in-out infinite;
+  will-change: transform;
+}
+
+.particle {
+  position: absolute;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.4);
+  transform: rotate(var(--particle-angle)) translate3d(var(--particle-radius), 0, 0);
+  animation-name: particleOrbit;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  will-change: transform;
+}
+
+[data-theme='light'] .particle {
+  background: rgba(15, 23, 42, 0.3);
+}
+
+.hero-parallax,
+.nav-parallax {
+  position: relative;
+  z-index: 2;
+}
+
+.hero-visual-parallax {
+  z-index: 2;
+}
+
+.magnetic-wrapper {
+  display: inline-block;
+}
+
+.magnetic-block {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.magnetic-inner {
+  will-change: transform;
+  transform-style: preserve-3d;
+  height: 100%;
 }
 
 .backdrop-grid {
@@ -1305,6 +1443,37 @@ button {
   }
 }
 
+@keyframes particleOrbit {
+  0%,
+  100% {
+    transform: rotate(var(--particle-angle)) translate3d(var(--particle-radius), 0, 0);
+  }
+  50% {
+    transform: rotate(calc(var(--particle-angle) + 22deg)) translate3d(calc(var(--particle-radius) + var(--particle-drift)), 0, 0);
+  }
+}
+
+@keyframes orbDrift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(18px, -12px, 0);
+  }
+}
+
+@keyframes cursorParticleDrift {
+  0%,
+  100% {
+    transform: rotate(var(--cursor-angle)) translate3d(var(--cursor-radius), 0, 0);
+  }
+  50% {
+    transform: rotate(calc(var(--cursor-angle) + 14deg))
+      translate3d(calc(var(--cursor-radius) + var(--cursor-drift)), 0, 0);
+  }
+}
+
 @media (max-width: 1100px) {
   .hero-grid {
     grid-template-columns: 1fr;
@@ -1359,6 +1528,10 @@ button {
     grid-template-columns: 1fr;
   }
 
+  .magnetic-wrapper {
+    width: 100%;
+  }
+
   .eval-card,
   .adaptive-card,
   .voice-card,
@@ -1401,6 +1574,10 @@ button {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  .particle {
+    animation: none !important;
   }
 }
 
