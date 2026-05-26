@@ -19,18 +19,26 @@ enum InviteStatus {
   completed
 }
 
+enum UserRole {
+  USER
+  RECRUITER
+  ADMIN
+}
+
 model User {
-  id         Int         @id @default(autoincrement())
-  name       String
-  email      String      @unique
-  password   String?
-  provider   String?
-  providerId String?
-  avatarUrl  String?
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
-  resumes    Resume[]
-  interviews Interview[]
+  id                  Int                 @id @default(autoincrement())
+  name                String
+  email               String              @unique
+  password            String?
+  provider            String?
+  providerId          String?
+  avatarUrl           String?
+  role                UserRole            @default(USER)
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  resumes             Resume[]
+  interviews          Interview[]
+  recruiterActivities RecruiterActivity[]
 
   @@unique([provider, providerId])
 }
@@ -56,8 +64,8 @@ model Interview {
   targetQuestionCount  Int              @default(10) @map("target_question_count")
   currentQuestionIndex Int              @default(0)
   status               String           @default("started")
-  warningCount         Int              @default(0)             @map("warning_count")
-  isTerminated         Boolean          @default(false)         @map("is_terminated")
+  warningCount         Int              @default(0) @map("warning_count")
+  isTerminated         Boolean          @default(false) @map("is_terminated")
   terminationReason    String?          @map("termination_reason")
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
@@ -73,16 +81,16 @@ model Interview {
 }
 
 model Question {
-  id           Int      @id @default(autoincrement())
-  interviewId  Int
+  id             Int      @id @default(autoincrement())
+  interviewId    Int
   roleQuestionId Int?
-  questionText String
-  orderIndex   Int
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  answer       Answer?
+  questionText   String
+  orderIndex     Int
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  answer         Answer?
 
-  interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  interview    Interview     @relation(fields: [interviewId], references: [id], onDelete: Cascade)
   roleQuestion RoleQuestion? @relation(fields: [roleQuestionId], references: [id], onDelete: SetNull)
 
   @@unique([interviewId, orderIndex])
@@ -112,12 +120,12 @@ model Answer {
 }
 
 model InterviewMemory {
-  id           Int      @id @default(autoincrement())
-  interviewId  Int      @unique @map("interview_id")
-  resumeInsights Json?  @map("resume_insights")
-  memory       Json?
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id             Int      @id @default(autoincrement())
+  interviewId    Int      @unique @map("interview_id")
+  resumeInsights Json?    @map("resume_insights")
+  memory         Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
   interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
 
@@ -126,31 +134,32 @@ model InterviewMemory {
 }
 
 model RoleQuestion {
-  id          Int           @id @default(autoincrement())
-  role        CandidateRole
-  questionText String       @map("question_text")
-  idealAnswer String        @map("ideal_answer")
-  orderIndex  Int           @map("order_index")
-  createdAt   DateTime      @default(now()) @map("created_at")
-  updatedAt   DateTime      @updatedAt @map("updated_at")
-  questions   Question[]
+  id           Int           @id @default(autoincrement())
+  role         CandidateRole
+  questionText String        @map("question_text")
+  idealAnswer  String        @map("ideal_answer")
+  orderIndex   Int           @map("order_index")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  questions    Question[]
 
   @@unique([role, orderIndex])
   @@map("role_questions")
 }
 
 model Candidate {
-  id                Int             @id @default(autoincrement())
-  candidateId       String          @unique @default(uuid()) @map("candidate_id")
-  fullName          String          @map("full_name")
-  email             String
-  role              CandidateRole
-  resumeFileUrl     String?         @map("resume_file_url")
-  resumeInsights    String?         @map("resume_insights")
-  applicationStatus String          @default("submitted") @map("application_status")
-  createdAt         DateTime        @default(now()) @map("created_at")
-  updatedAt         DateTime        @updatedAt @map("updated_at")
-  invites           InterviewInvite[]
+  id                  Int                 @id @default(autoincrement())
+  candidateId         String              @unique @default(uuid()) @map("candidate_id")
+  fullName            String              @map("full_name")
+  email               String
+  role                CandidateRole
+  resumeFileUrl       String?             @map("resume_file_url")
+  resumeInsights      String?             @map("resume_insights")
+  applicationStatus   String              @default("submitted") @map("application_status")
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+  invites             InterviewInvite[]
+  recruiterActivities RecruiterActivity[]
 
   @@index([email])
   @@index([role])
@@ -184,15 +193,32 @@ model InterviewInvite {
 }
 
 model ProctoredEvent {
-  id         Int      @id @default(autoincrement())
+  id          Int      @id @default(autoincrement())
   interviewId Int      @map("interview_id")
-  eventType  String   @map("event_type")
-  details    Json?
-  createdAt  DateTime @default(now()) @map("created_at")
+  eventType   String   @map("event_type")
+  details     Json?
+  createdAt   DateTime @default(now()) @map("created_at")
 
   interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
 
   @@index([interviewId])
   @@index([eventType])
   @@map("proctor_events")
+}
+
+model RecruiterActivity {
+  id          Int      @id @default(autoincrement())
+  recruiterId Int      @map("recruiter_id")
+  candidateId Int      @map("candidate_id")
+  action      String
+  notes       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  recruiter User      @relation(fields: [recruiterId], references: [id], onDelete: Cascade)
+  candidate Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([recruiterId])
+  @@index([candidateId])
+  @@index([action])
+  @@map("recruiter_activity")
 }

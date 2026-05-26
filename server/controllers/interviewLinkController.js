@@ -220,6 +220,13 @@ const startInterviewWithToken = asyncHandler(async (req, res) => {
     },
   })
 
+  if (updatedInvite.candidateRecordId) {
+    await prisma.candidate.update({
+      where: { id: updatedInvite.candidateRecordId },
+      data: { applicationStatus: 'interviewing' },
+    })
+  }
+
   res.status(200).json({
     success: true,
     data: {
@@ -264,6 +271,13 @@ const completeInterviewWithToken = asyncHandler(async (req, res) => {
       completedAt: new Date(),
     },
   })
+
+  if (updatedInvite.candidateRecordId) {
+    await prisma.candidate.update({
+      where: { id: updatedInvite.candidateRecordId },
+      data: { applicationStatus: 'completed' },
+    })
+  }
 
   res.status(200).json({
     success: true,

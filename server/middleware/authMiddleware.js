@@ -36,6 +36,7 @@ const protect = asyncHandler(async (req, res, next) => {
         email: true,
         avatarUrl: true,
         provider: true,
+        role: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -54,6 +55,17 @@ const protect = asyncHandler(async (req, res, next) => {
   }
 })
 
+const requireRole = (...allowedRoles) => (req, res, next) => {
+  const role = req.user?.role
+  if (!role || !allowedRoles.includes(role)) {
+    res.status(403)
+    throw new Error('Forbidden: insufficient role')
+  }
+
+  next()
+}
+
 export {
   protect,
+  requireRole,
 }

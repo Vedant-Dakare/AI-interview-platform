@@ -44,6 +44,7 @@ function sanitizeUser(user) {
     email: user.email,
     avatarUrl: user.avatarUrl || null,
     provider: user.provider || null,
+    role: user.role || 'USER',
   }
 }
 

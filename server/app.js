@@ -12,6 +12,7 @@ import interviewRoutes from './routes/interviewRoutes.js'
 import interviewLinkRoutes from './routes/interviewLinkRoutes.js'
 import resumeRoutes from './routes/resumeRoutes.js'
 import proctorRoutes from './routes/proctorRoutes.js'
+import recruiterRoutes from './routes/recruiterRoutes.js'
 import { errorHandler, notFound } from './middleware/errorMiddleware.js'
 import prisma from './prisma/client.js'
 import { assertCloudinaryConfig } from './services/resumeStorageService.js'
@@ -92,6 +93,7 @@ app.use('/api/resume', resumeRoutes)
 app.use('/api/interview', interviewRoutes)
 app.use('/api/interview-links', interviewLinkRoutes)
 app.use('/api/proctor', proctorRoutes)
+app.use('/api/recruiter', recruiterRoutes)
 
 app.use(notFound)
 app.use(errorHandler)
