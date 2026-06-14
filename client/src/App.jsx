@@ -7,6 +7,13 @@ import AuthPage from './components/auth/AuthPage'
 import AuthCallbackPage from './components/auth/AuthCallbackPage'
 import CandidateApplyPage from './components/apply/CandidateApplyPage'
 import ProtectedPlaceholder from './components/auth/ProtectedPlaceholder'
+import RecruiterDashboard from './components/recruiter/RecruiterDashboard'
+import RecruiterCandidates from './components/recruiter/RecruiterCandidates'
+import CandidateDetail from './components/recruiter/CandidateDetail'
+import RecruiterAnalytics from './components/recruiter/RecruiterAnalytics'
+import RecruiterJobs from './components/recruiter/RecruiterJobs'
+import RecruiterSettings from './components/recruiter/RecruiterSettings'
+import RecruiterAdminPanel from './components/recruiter/RecruiterAdminPanel'
 import { startInterviewWithToken, validateInterviewToken } from './services/interviewLinkApi'
 import { useAuth } from './context/AuthContext'
 
@@ -45,6 +52,34 @@ function getRoute() {
     return 'apply'
   }
 
+  if (hash.startsWith('#/recruiter/candidates/')) {
+    return 'recruiter-candidate'
+  }
+
+  if (hash.startsWith('#/recruiter/candidates')) {
+    return 'recruiter-candidates'
+  }
+
+  if (hash.startsWith('#/recruiter/analytics')) {
+    return 'recruiter-analytics'
+  }
+
+  if (hash.startsWith('#/recruiter/jobs')) {
+    return 'recruiter-jobs'
+  }
+
+  if (hash.startsWith('#/recruiter/settings')) {
+    return 'recruiter-settings'
+  }
+
+  if (hash.startsWith('#/recruiter')) {
+    return 'recruiter-dashboard'
+  }
+
+  if (hash.startsWith('#/admin')) {
+    return 'admin'
+  }
+
   if (hash === '#/dashboard') {
     return 'dashboard'
   }
@@ -61,12 +96,23 @@ function getRoute() {
 }
 
 function App() {
-  const { isAuthenticated, isInitializing, logout } = useAuth()
+  const { isAuthenticated, isInitializing, logout, user } = useAuth()
   const [route, setRoute] = useState(getRoute())
   const [interviewToken, setInterviewToken] = useState(extractInterviewToken(window.location.hash || '#/'))
   const [interviewLinkState, setInterviewLinkState] = useState({ status: 'idle', error: '', context: null })
+  const recruiterCandidateId = route === 'recruiter-candidate'
+    ? window.location.hash.replace('#/recruiter/candidates/', '').trim()
+    : null
 
   const protectedRoutes = new Set(['apply', 'dashboard', 'reports', 'analytics'])
+  const recruiterRoutes = new Set([
+    'recruiter-dashboard',
+    'recruiter-candidates',
+    'recruiter-candidate',
+    'recruiter-analytics',
+    'recruiter-jobs',
+    'recruiter-settings',
+  ])
 
   useEffect(() => {
     function handleHashChange() {
@@ -197,6 +243,12 @@ function App() {
       setRoute('login')
       window.location.hash = '/login'
     }
+
+    if (recruiterRoutes.has(route) && !isAuthenticated) {
+      localStorage.setItem('auth-redirect', window.location.hash || '#/')
+      setRoute('login')
+      window.location.hash = '/login'
+    }
   }, [route, isAuthenticated, isInitializing])
 
   if (route === 'interview') {
@@ -267,6 +319,16 @@ function App() {
   }
 
   if (route === 'dashboard') {
+    if (user?.role && user.role !== 'USER') {
+      return (
+        <ProtectedPlaceholder
+          title="Candidate dashboard only"
+          description="This dashboard is available for candidate accounts."
+          onBackHome={openLandingPage}
+        />
+      )
+    }
+
     return (
       <ProtectedPlaceholder
         title="Interview Dashboard"
@@ -277,6 +339,16 @@ function App() {
   }
 
   if (route === 'reports') {
+    if (user?.role && user.role !== 'USER') {
+      return (
+        <ProtectedPlaceholder
+          title="Candidate reports only"
+          description="Reports are available for candidate accounts."
+          onBackHome={openLandingPage}
+        />
+      )
+    }
+
     return (
       <ProtectedPlaceholder
         title="Performance Reports"
@@ -287,6 +359,16 @@ function App() {
   }
 
   if (route === 'analytics') {
+    if (user?.role && user.role !== 'USER') {
+      return (
+        <ProtectedPlaceholder
+          title="Candidate analytics only"
+          description="Analytics are available for candidate accounts."
+          onBackHome={openLandingPage}
+        />
+      )
+    }
+
     return (
       <ProtectedPlaceholder
         title="Analytics & History"
@@ -294,6 +376,86 @@ function App() {
         onBackHome={openLandingPage}
       />
     )
+  }
+
+  if (recruiterRoutes.has(route)) {
+    if (!isAuthenticated) {
+      return (
+        <ProtectedPlaceholder
+          title="Sign in required"
+          description="Please sign in to access recruiter dashboards."
+          onBackHome={openLandingPage}
+        />
+      )
+    }
+
+    if (!['RECRUITER', 'ADMIN'].includes(user?.role)) {
+      return (
+        <ProtectedPlaceholder
+          title="Recruiter access only"
+          description="Your account does not have recruiter permissions."
+          onBackHome={openLandingPage}
+        />
+      )
+    }
+
+    if (route === 'recruiter-dashboard') {
+      return <RecruiterDashboard />
+    }
+
+    if (route === 'recruiter-candidates') {
+      return <RecruiterCandidates />
+    }
+
+    if (route === 'recruiter-candidate') {
+      if (!recruiterCandidateId) {
+        return (
+          <ProtectedPlaceholder
+            title="Candidate not found"
+            description="Select a candidate from the pipeline to view details."
+            onBackHome={openLandingPage}
+          />
+        )
+      }
+
+      return <CandidateDetail candidateId={recruiterCandidateId} />
+    }
+
+    if (route === 'recruiter-analytics') {
+      return <RecruiterAnalytics />
+    }
+
+    if (route === 'recruiter-jobs') {
+      return <RecruiterJobs />
+    }
+
+    if (route === 'recruiter-settings') {
+      return <RecruiterSettings />
+    }
+  }
+
+  if (route === 'admin') {
+    if (!isAuthenticated) {
+      return (
+        <ProtectedPlaceholder
+          title="Sign in required"
+          description="Please sign in to access admin controls."
+          onBackHome={openLandingPage}
+        />
+      )
+    }
+
+    if (user?.role !== 'ADMIN') {
+      return (
+        <ProtectedPlaceholder
+          title="Admin access only"
+          description="Your account does not have admin permissions."
+          onBackHome={openLandingPage}
+        />
+      )
+    }
+
+    return <RecruiterAdminPanel />
   }
 
   return (
