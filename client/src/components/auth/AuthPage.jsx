@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { login, signup, getOAuthUrl } from '../../services/authApi'
 import { useAuth } from '../../context/AuthContext'
+import { isAuthFlowHash } from '../../utils/authRedirect'
 
 function AuthPage({ mode = 'login', onSuccess, onSwitchToSignup, onSwitchToLogin, onBackHome }) {
   const { setSession } = useAuth()
@@ -86,7 +87,8 @@ function AuthPage({ mode = 'login', onSuccess, onSwitchToSignup, onSwitchToLogin
     setErrorMessage('')
     setOauthLoading(provider)
 
-    const redirectPath = localStorage.getItem('auth-redirect') || window.location.hash || '#/'
+    const currentHash = window.location.hash || '#/'
+    const redirectPath = localStorage.getItem('auth-redirect') || (isAuthFlowHash(currentHash) ? '' : currentHash)
     const oauthUrl = getOAuthUrl(provider, redirectPath)
     window.location.href = oauthUrl
   }

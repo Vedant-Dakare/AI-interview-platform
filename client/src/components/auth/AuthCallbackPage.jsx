@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { parseOAuthCallback } from '../../services/authApi'
 import { useAuth } from '../../context/AuthContext'
+import { resolvePostAuthHash } from '../../utils/authRedirect'
 
 function AuthCallbackPage({ onBackHome }) {
   const { refreshSession } = useAuth()
@@ -24,14 +25,16 @@ function AuthCallbackPage({ onBackHome }) {
 
     async function finalizeSession() {
       try {
-        await refreshSession()
+        const currentUser = await refreshSession()
 
         const pendingInterview = localStorage.getItem('pending-interview-token')
-        const nextTarget =
-          (pendingInterview ? `#/interview/${pendingInterview}` : '') ||
-          redirect ||
-          localStorage.getItem('auth-redirect') ||
-          '#/'
+        const savedTarget = redirect || localStorage.getItem('auth-redirect')
+        const nextTarget = pendingInterview
+          ? `#/interview/${pendingInterview}`
+          : resolvePostAuthHash({
+              role: currentUser?.role,
+              preferredTarget: savedTarget,
+            })
         localStorage.removeItem('auth-redirect')
         if (pendingInterview) {
           localStorage.removeItem('pending-interview-token')

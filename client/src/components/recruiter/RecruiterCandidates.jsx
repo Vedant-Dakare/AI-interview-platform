@@ -119,7 +119,13 @@ function RecruiterCandidates() {
             {items.map((item) => (
               <div className="recruiter-table-row wide" key={item.candidateId}>
                 <div>
-                  <strong>{item.fullName}</strong>
+                  <button
+                    type="button"
+                    className="candidate-profile-link"
+                    onClick={() => (window.location.hash = `/recruiter/candidates/${item.candidateId}`)}
+                  >
+                    {item.fullName}
+                  </button>
                   <span>{item.email}</span>
                 </div>
                 <span>{item.role.toUpperCase()}</span>

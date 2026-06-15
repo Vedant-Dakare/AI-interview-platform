@@ -93,18 +93,33 @@ function TopNavBar({ onSignIn }) {
                     <strong>{user?.name || 'IntervueAI Member'}</strong>
                     <span>{user?.email || 'AI Interview Suite'}</span>
                   </div>
-                  <button type="button" onClick={() => (window.location.hash = '/dashboard')}>
-                    <span className="material-symbols-outlined">dashboard</span>
-                    Dashboard
-                  </button>
-                  <button type="button" onClick={() => (window.location.hash = '/reports')}>
-                    <span className="material-symbols-outlined">query_stats</span>
-                    Reports
-                  </button>
-                  <button type="button" onClick={() => (window.location.hash = '/analytics')}>
-                    <span className="material-symbols-outlined">insights</span>
-                    Analytics
-                  </button>
+                  {user?.role === 'RECRUITER' || user?.role === 'ADMIN' ? (
+                    <button type="button" onClick={() => (window.location.hash = '/recruiter/dashboard')}>
+                      <span className="material-symbols-outlined">space_dashboard</span>
+                      Recruiter Dashboard
+                    </button>
+                  ) : (
+                    <>
+                      <button type="button" onClick={() => (window.location.hash = '/dashboard')}>
+                        <span className="material-symbols-outlined">dashboard</span>
+                        Dashboard
+                      </button>
+                      <button type="button" onClick={() => (window.location.hash = '/reports')}>
+                        <span className="material-symbols-outlined">query_stats</span>
+                        Reports
+                      </button>
+                      <button type="button" onClick={() => (window.location.hash = '/analytics')}>
+                        <span className="material-symbols-outlined">insights</span>
+                        Analytics
+                      </button>
+                    </>
+                  )}
+                  {user?.role === 'ADMIN' ? (
+                    <button type="button" onClick={() => (window.location.hash = '/admin')}>
+                      <span className="material-symbols-outlined">admin_panel_settings</span>
+                      Admin Controls
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="logout"
