@@ -16,6 +16,7 @@ import RecruiterSettings from './components/recruiter/RecruiterSettings'
 import RecruiterAdminPanel from './components/recruiter/RecruiterAdminPanel'
 import { startInterviewWithToken, validateInterviewToken } from './services/interviewLinkApi'
 import { useAuth } from './context/AuthContext'
+import { resolvePostAuthHash } from './utils/authRedirect'
 
 function extractInterviewToken(hash) {
   if (!hash.startsWith('#/interview/')) {
@@ -158,17 +159,12 @@ function App() {
     }
 
     const redirectTarget = localStorage.getItem('auth-redirect')
-    if (redirectTarget) {
-      localStorage.removeItem('auth-redirect')
-      const cleanedTarget = redirectTarget.startsWith('#')
-        ? redirectTarget.slice(1)
-        : redirectTarget
-      window.location.hash = cleanedTarget === '/interview' ? '/' : cleanedTarget
-      return
-    }
-
-    window.location.hash = '/'
-    setRoute('landing')
+    const nextHash = resolvePostAuthHash({
+      role: user?.role,
+      preferredTarget: redirectTarget,
+    })
+    localStorage.removeItem('auth-redirect')
+    window.location.hash = nextHash
   }
 
   useEffect(() => {
@@ -249,7 +245,17 @@ function App() {
       setRoute('login')
       window.location.hash = '/login'
     }
-  }, [route, isAuthenticated, isInitializing])
+
+    if ((route === 'login' || route === 'signup') && isAuthenticated) {
+      const redirectTarget = localStorage.getItem('auth-redirect')
+      const nextHash = resolvePostAuthHash({
+        role: user?.role,
+        preferredTarget: redirectTarget,
+      })
+      localStorage.removeItem('auth-redirect')
+      window.location.hash = nextHash
+    }
+  }, [route, isAuthenticated, isInitializing, user?.role])
 
   if (route === 'interview') {
     return (
