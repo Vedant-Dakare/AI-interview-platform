@@ -40,7 +40,7 @@ function SiteFooter() {
         </div>
       </div>
       <div className="footer-bottom">
-        <span>© 2024 IntervueAI. All rights reserved.</span>
+        <span>© 2026 IntervueAI. All rights reserved.</span>
       </div>
     </footer>
   )
