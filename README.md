@@ -70,42 +70,200 @@ This repository contains:
 
 ## Architecture
 
-- Frontend is a hash-routed single-page app.
-- Backend is a REST API under `/api/*`.
-- Face verification runs as a separate FastAPI microservice under `/face-service`.
-- Prisma maps app models to PostgreSQL.
-- Interview links are token-based:
-  - raw token is only sent to the candidate
-  - hashed token is stored in DB
-  - token has expiry and completion status checks
+The platform follows a microservice-based architecture consisting of three major components:
+
+* **Frontend**: React + Vite single-page application for candidates and recruiters.
+* **Backend**: Node.js + Express REST API handling authentication, interviews, resumes, reporting, and business logic.
+* **Face Verification Service**: Independent Python FastAPI microservice responsible for face registration and identity verification.
+
+### High-Level Architecture
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                        CLIENT LAYER                        │
+│                                                           │
+│                 React + Vite Frontend                     │
+│                                                           │
+│  • Authentication                                         │
+│  • Resume Upload                                          │
+│  • Interview Workspace                                    │
+│  • TTS / STT Interface                                   │
+│  • Reports Dashboard                                     │
+└───────────────────────┬────────────────────────────────────┘
+                        │
+                        │ REST API Calls
+                        ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     NODE.JS BACKEND                       │
+│                                                           │
+│                 Express + Prisma ORM                      │
+│                                                           │
+│  • Authentication APIs                                   │
+│  • Interview Engine                                      │
+│  • Resume Processing                                     │
+│  • Invite Management                                     │
+│  • Proctoring APIs                                       │
+│  • Reporting APIs                                        │
+└──────────────┬───────────────────────┬────────────────────┘
+               │                       │
+               │                       │
+               ▼                       ▼
+
+┌─────────────────────┐     ┌─────────────────────────────┐
+│    PostgreSQL DB    │     │      External Services      │
+│                     │     │                             │
+│ • Users             │     │ • Cloudinary               │
+│ • Interviews        │     │ • SMTP Provider            │
+│ • Questions         │     │ • ElevenLabs (TTS)         │
+│ • Answers           │     │ • OpenAI/Ollama            │
+│ • Candidates        │     │                             │
+│ • Proctor Events    │     └─────────────────────────────┘
+└─────────────────────┘
+
+                        ▲
+                        │
+                        │ Face Verification Requests
+                        │
+┌─────────────────────────────────────────────────────────────┐
+│              FACE VERIFICATION MICROSERVICE               │
+│                                                           │
+│                 FastAPI + face_recognition                │
+│                                                           │
+│  • Face Registration                                     │
+│  • Face Matching                                         │
+│  • Identity Verification                                 │
+│  • Session Management                                    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Secure Interview Flow
+
+```text
+Candidate Applies
+        │
+        ▼
+Resume Upload + Parsing
+        │
+        ▼
+Interview Invite Generated
+        │
+        ▼
+Secure Token Validation
+        │
+        ▼
+Face Registration
+        │
+        ▼
+AI Interview Session Starts
+        │
+        ▼
+Continuous Face Verification
+        │
+        ▼
+Answer Submission + Evaluation
+        │
+        ▼
+Report Generation
+```
+
+### Security Design
+
+* JWT-based authentication for all protected APIs.
+* Secure interview invite tokens are hashed before storage.
+* Interview links have expiry and completion checks.
+* Proctoring events are logged during interviews.
+* Face identity verification is handled by a dedicated microservice.
 
 ## Project Structure
 
 ```text
 AI-interview-platform/
-  client/
-    src/
-      components/
-        apply/
-        auth/
-        interview/
-        landing/
-      services/
-    package.json
-  server/
-    controllers/
-    middleware/
-    prisma/
-      schema.prisma
-    routes/
-    services/
-    utils/
-    app.js
-    package.json
-  face-service/
-    main.py
-    requirements.txt
-  README.md
+│
+├── client/                                   # React + Vite frontend
+│   ├── public/                              # Static assets
+│   ├── src/
+│   │   ├── assets/                          # Images, icons, and static resources
+│   │   ├── components/                      # Reusable UI components
+│   │   ├── context/                         # React Context providers
+│   │   ├── services/                        # API communication layer
+│   │   ├── utils/                           # Helper and utility functions
+│   │   ├── App.jsx                          # Root application component
+│   │   ├── App.css
+│   │   ├── main.jsx                         # Frontend entry point
+│   │   ├── index.css
+│   │   └── InterviewPage.css
+│   ├── .env.example
+│   ├── package.json
+│   └── vite.config.js
+│
+├── server/                                  # Node.js + Express backend
+│   │
+│   ├── config/                              # Application configuration
+│   │   └── passport.js
+│   │
+│   ├── controllers/                         # Request handlers
+│   │   ├── applicationController.js
+│   │   ├── authController.js
+│   │   ├── interviewController.js
+│   │   ├── interviewLinkController.js
+│   │   ├── proctorController.js
+│   │   ├── recruiterController.js
+│   │   └── resumeController.js
+│   │
+│   ├── middleware/                          # Custom middleware
+│   │   ├── asyncHandler.js
+│   │   ├── authMiddleware.js
+│   │   ├── errorMiddleware.js
+│   │   └── internalApiKeyMiddleware.js
+│   │
+│   ├── prisma/                              # Database schema and migrations
+│   │   ├── schema.prisma
+│   │   └── migrations/
+│   │
+│   ├── routes/                              # API route definitions
+│   │   ├── applicationRoutes.js
+│   │   ├── authRoutes.js
+│   │   ├── interviewLinkRoutes.js
+│   │   ├── interviewRoutes.js
+│   │   ├── proctorRoutes.js
+│   │   ├── recruiterRoutes.js
+│   │   └── resumeRoutes.js
+│   │
+│   ├── scripts/                             # Utility/debug scripts
+│   │   └── debugInviteEmails.mjs
+│   │
+│   ├── services/                            # Business logic and AI services
+│   │   ├── adaptiveInterviewService.js
+│   │   ├── emailService.js
+│   │   ├── embeddingService.js
+│   │   ├── interviewEvaluationService.js
+│   │   ├── interviewInviteService.js
+│   │   ├── ollamaService.js
+│   │   ├── openaiService.js
+│   │   ├── questionBankService.js
+│   │   ├── resumeInsightsService.js
+│   │   ├── resumeStorageService.js
+│   │   ├── transcriptionService.js
+│   │   └── ttsService.js
+│   │
+│   ├── utils/                               # Helper utilities
+│   │   ├── fileUpload.js
+│   │   ├── interviewToken.js
+│   │   ├── resumeUploadHandler.js
+│   │   └── urlUtils.js
+│   │
+│   ├── .env.example
+│   ├── app.js                               # Backend entry point
+│   ├── package.json
+│   └── prisma.config.ts
+│
+├── face-service/                            # FastAPI face verification service
+│   ├── main.py                              # Face verification API
+│   ├── requirements.txt                     # Python dependencies
+│   └── yolov8n.pt                           # YOLO model for face detection
+│
+├── README.md
+└── .gitignore
 ```
 
 ## Local Setup
