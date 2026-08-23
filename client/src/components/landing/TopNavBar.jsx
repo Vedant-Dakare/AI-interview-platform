@@ -53,6 +53,7 @@ function TopNavBar({ onSignIn }) {
               <a href="#">Features</a>
               <a href="#">Pricing</a>
               <a href="#">Enterprise</a>
+              <a href='#'> Resources</a>
             </div>
           </div>
 

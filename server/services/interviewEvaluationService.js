@@ -63,7 +63,14 @@ function normalizeStringArray(value) {
     .filter((item) => item && !seen.has(item.toLowerCase()) && seen.add(item.toLowerCase()))
 }
 
-async function evaluateAdaptiveAnswer({ questionText, candidateAnswerText, resumeInsights, difficulty, topic }) {
+async function evaluateAdaptiveAnswer({
+  questionText,
+  candidateAnswerText,
+  resumeInsights,
+  difficulty,
+  topic,
+  expectedConcepts = [],
+}) {
   const answerText = String(candidateAnswerText || '').trim()
   const question = String(questionText || '').trim()
 
@@ -89,38 +96,53 @@ async function evaluateAdaptiveAnswer({ questionText, candidateAnswerText, resum
     }
   }
 
-  const resumeSummary = {
-    skills: resumeInsights?.skills || [],
-    frameworks: resumeInsights?.frameworks || [],
-    projects: resumeInsights?.projects || [],
-    domains: resumeInsights?.domains || [],
-    experienceLevel: resumeInsights?.experienceLevel || 'junior',
-  }
+  const concepts = normalizeStringArray(expectedConcepts).slice(0, 6)
+  const conceptHint = concepts.length
+    ? `EXPECTED_CONCEPTS (a strong answer should touch most of these): ${concepts.join('; ')}`
+    : ''
+
+  // Compact profile - only fields that genuinely help calibrate scoring.
+  const resumeSummary = [
+    `level=${resumeInsights?.experienceLevel || 'junior'}`,
+    ...(resumeInsights?.skills?.length ? [`skills=${resumeInsights.skills.slice(0, 8).join('/')}`] : []),
+  ].join(', ')
 
   const prompt = clampPrompt([
-    'You are an adaptive technical interview evaluator.',
-    'Evaluate the candidate answer strictly and return JSON only with keys:',
-    'score, technicalScore, communicationScore, problemSolvingScore, confidenceScore, strengths, weaknesses, feedback, nextDifficulty, nextTopic.',
-    'Scores must be 0-10. nextDifficulty must be easy|medium|hard.',
-    'Keep feedback concise and actionable.',
+    'You are a strict technical interview evaluator. Grade the candidate answer against the question.',
+    'Return JSON only with keys: score, technicalScore, communicationScore, problemSolvingScore, confidenceScore, strengths, weaknesses, feedback, nextDifficulty, nextTopic.',
+    'Rules: all scores 0-10 (decimals allowed); strengths/weaknesses are arrays of at most 2 short strings each; feedback is one actionable sentence; nextDifficulty must be easy|medium|hard based on this answer; nextTopic stays in the same domain as QUESTION.',
+    conceptHint,
     '',
-    `ROLE_CONTEXT: ${JSON.stringify(resumeSummary)}`,
+    `CANDIDATE: ${resumeSummary}`,
     `TOPIC: ${topic || 'core'}`,
-    `DIFFICULTY: ${difficulty || 'medium'}`,
-    `QUESTION: ${question}`,
-    `ANSWER: ${answerText}`,
-  ].join('\n'), 4000)
+    `QUESTION_DIFFICULTY: ${difficulty || 'medium'}`,
+    `QUESTION: ${question.slice(0, 600)}`,
+    `ANSWER: ${answerText.slice(0, 2400)}`,
+  ].filter(Boolean).join('\n'), 4000)
 
+  // The LLM evaluation and embedding generation are independent - run them
+  // concurrently instead of paying two sequential round-trips.
   let parsed = null
-  try {
-    parsed = await callOllamaJson({
-      prompt,
-      timeoutMs: Number(process.env.OLLAMA_EVAL_TIMEOUT_MS || 3500),
-      maxRetries: Number(process.env.OLLAMA_EVAL_RETRIES || 0),
-    })
-  } catch {
+  const evaluationPromise = callOllamaJson({
+    prompt,
+    format: 'json',
+    timeoutMs: Number(process.env.OLLAMA_EVAL_TIMEOUT_MS || 12000),
+    maxRetries: Number(process.env.OLLAMA_EVAL_RETRIES || 0),
+    options: {
+      temperature: Number(process.env.OLLAMA_EVAL_TEMPERATURE || 0.2),
+      num_predict: Number(process.env.OLLAMA_EVAL_NUM_PREDICT || 300),
+    },
+  }).then((result) => {
+    parsed = result
+  }).catch(() => {
     parsed = null
-  }
+  })
+
+  const [answerEmbedding, referenceEmbedding] = await Promise.all([
+    generateEmbedding(answerText),
+    generateEmbedding(question),
+    evaluationPromise,
+  ])
 
   const evaluation = parsed || {}
   const lengthScore = Math.min(10, Math.max(2, Math.round(answerText.length / 80)))
@@ -140,11 +162,6 @@ async function evaluateAdaptiveAnswer({ questionText, candidateAnswerText, resum
   const strengths = normalizeStringArray(evaluation.strengths)
   const weaknesses = normalizeStringArray(evaluation.weaknesses)
   const feedback = String(evaluation.feedback || '').trim() || 'Provide more structured reasoning and concrete examples.'
-
-  const [answerEmbedding, referenceEmbedding] = await Promise.all([
-    generateEmbedding(answerText),
-    generateEmbedding(question),
-  ])
 
   const similarityScore = clampSimilarity(cosineSimilarity(answerEmbedding, referenceEmbedding))
   const finalScore = clampScore((technicalScore * 0.6) + (communicationScore * 0.2) + (problemSolvingScore * 0.2))
@@ -449,15 +466,23 @@ async function summarizeAdaptiveInterviewPerformance(answerRows, resumeInsights)
 
   const prompt = clampPrompt([
     'Summarize the adaptive interview results. Return JSON only with keys:',
-    'strengths, weaknesses, recommendation, summary.',
-    'Keep summary under 4 sentences.',
+    'strengths (array of max 3 short strings), weaknesses (array of max 3 short strings), recommendation (SHORTLIST or REJECT), summary (under 4 sentences).',
     '',
     `ROLE_CONTEXT: ${JSON.stringify(resumeSummary)}`,
     `ANSWERS: ${JSON.stringify(compact)}`,
   ].join('\n'), 4000)
 
   try {
-    const parsed = await callOllamaJson({ prompt })
+    const parsed = await callOllamaJson({
+      prompt,
+      format: 'json',
+      timeoutMs: Number(process.env.OLLAMA_SUMMARY_TIMEOUT_MS || 20000),
+      maxRetries: 0,
+      options: {
+        temperature: 0.2,
+        num_predict: Number(process.env.OLLAMA_SUMMARY_NUM_PREDICT || 320),
+      },
+    })
     return {
       ...fallback,
       strengths: normalizeStringArray(parsed.strengths).slice(0, 5) || fallback.strengths,
@@ -472,4 +497,10 @@ async function summarizeAdaptiveInterviewPerformance(answerRows, resumeInsights)
   }
 }
 
-export { evaluateInterviewAnswer, evaluateAdaptiveAnswer, summarizeInterviewPerformance, summarizeAdaptiveInterviewPerformance }
+export {
+  evaluateInterviewAnswer,
+  evaluateAdaptiveAnswer,
+  summarizeInterviewPerformance,
+  summarizeAdaptiveInterviewPerformance,
+  buildAdaptiveSummary,
+}

@@ -183,7 +183,13 @@ function normalizeRole(role) {
   return null
 }
 
+let roleBankSeeded = false
+
 async function ensureRoleQuestionBank() {
+  if (roleBankSeeded) {
+    return
+  }
+
   const roles = Object.keys(ROLE_QUESTION_BANK)
 
   for (const role of roles) {
@@ -213,6 +219,8 @@ async function ensureRoleQuestionBank() {
       })
     }
   }
+
+  roleBankSeeded = true
 }
 
 async function getRoleQuestionsOrFail(roleInput) {

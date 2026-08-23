@@ -114,6 +114,7 @@ function InterviewWorkspace({
   const [error, setError] = useState('')
   const [voiceState, setVoiceState] = useState('idle')
   const [isTranscribing, setIsTranscribing] = useState(false)
+  const [lastFeedback, setLastFeedback] = useState(null)
 
   const recognitionRef = useRef(null)
   const noSpeechTimerRef = useRef(null)
@@ -280,6 +281,14 @@ function InterviewWorkspace({
   }
 
   async function processCapturedAnswer(fallbackTranscript = '') {
+    if (isSubmittingRef.current) {
+      return
+    }
+
+    // Reserve the submission slot during transcription so a second trigger
+    // (auto-stop timer + manual click) cannot double-submit.
+    isSubmittingRef.current = true
+    setIsSubmitting(true)
     setVoiceState('processing')
     setIsTranscribing(true)
 
@@ -302,11 +311,11 @@ function InterviewWorkspace({
         }
       }
 
-      if (!transcript || isSubmittingRef.current) {
-        if (!isSubmittingRef.current) {
-          setVoiceState('idle')
-          setError('No clear speech was captured. Click Retry Listening, then answer again with a short pause at the end.')
-        }
+      if (!transcript) {
+        setVoiceState('idle')
+        setError('No clear speech was captured. Click Retry Listening, then answer again with a short pause at the end.')
+        isSubmittingRef.current = false
+        setIsSubmitting(false)
         return
       }
 
@@ -316,6 +325,8 @@ function InterviewWorkspace({
       setVoiceState('idle')
       const message = String(error?.message || '').trim()
       setError(message || 'Speech capture failed. Please click Retry Listening and speak again.')
+      isSubmittingRef.current = false
+      setIsSubmitting(false)
     } finally {
       setIsTranscribing(false)
     }
@@ -647,6 +658,7 @@ function InterviewWorkspace({
     setError('')
     setIsAnswered(false)
     setAnswer('')
+    setLastFeedback(null)
 
     try {
       stopListening()
@@ -690,6 +702,14 @@ function InterviewWorkspace({
 
       setAnswer(answerToSubmit)
       setIsAnswered(true)
+
+      if (payload.finalScore !== undefined && payload.finalScore !== null) {
+        setLastFeedback({
+          score: Number(payload.finalScore),
+          feedback: payload.feedback || '',
+          questionIndex: currentQuestionIndex,
+        })
+      }
 
       if (payload.hasNextQuestion) {
         onAnswerSubmitted?.(payload)
@@ -739,10 +759,6 @@ function InterviewWorkspace({
 
     await handleSubmitAnswer()
   }
-
-  useEffect(() => {
-    isSubmittingRef.current = isSubmitting
-  }, [isSubmitting])
 
   useEffect(() => {
     if (!window.speechSynthesis) {
@@ -858,6 +874,17 @@ function InterviewWorkspace({
                 <span className="material-symbols-outlined">check_circle</span>
                 <p>{currentQuestionIndex + 1 >= totalQuestions ? 'Final answer recorded' : 'Your answer has been recorded'}</p>
               </div>
+              {lastFeedback && lastFeedback.questionIndex === currentQuestionIndex && (
+                <div
+                  className={`instant-feedback ${
+                    lastFeedback.score >= 7 ? 'good' : lastFeedback.score < 5 ? 'weak' : ''
+                  }`}
+                  aria-live="polite"
+                >
+                  <strong>Answer scored: {lastFeedback.score.toFixed(1)}/10</strong>
+                  {lastFeedback.feedback && <p>{lastFeedback.feedback}</p>}
+                </div>
+              )}
             </div>
           )}
         </div>

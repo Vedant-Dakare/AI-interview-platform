@@ -1,8 +1,7 @@
 import asyncHandler from '../middleware/asyncHandler.js'
 import prisma from '../prisma/client.js'
-import { sendInterviewLinkEmail } from '../services/emailService.js'
-import { createInterviewInvite, normalizeRole } from '../services/interviewInviteService.js'
-import { buildInterviewLink, generateInterviewToken, getTokenExpiry, hashInterviewToken } from '../utils/interviewToken.js'
+import { createInterviewInvite, normalizeRole, resendInviteEmail } from '../services/interviewInviteService.js'
+import { hashInterviewToken } from '../utils/interviewToken.js'
 
 function getInviteValidationState(invite) {
   if (!invite) {
@@ -92,52 +91,7 @@ const sendInterviewLink = asyncHandler(async (req, res) => {
     throw new Error('candidateId is required')
   }
 
-  const existingInvite = await prisma.interviewInvite.findUnique({
-    where: { candidateId },
-  })
-
-  if (!existingInvite) {
-    res.status(404)
-    throw new Error('Candidate invite not found')
-  }
-
-  if (existingInvite.status === 'completed') {
-    res.status(409)
-    throw new Error('Interview already completed')
-  }
-
-  const newToken = generateInterviewToken()
-  const newTokenHash = hashInterviewToken(newToken)
-  const newExpiry = getTokenExpiry(24)
-  const interviewLink = buildInterviewLink(newToken)
-
-  const updatedInvite = await prisma.interviewInvite.update({
-    where: { candidateId },
-    data: {
-      interviewTokenHash: newTokenHash,
-      tokenExpiry: newExpiry,
-      emailSentAt: null,
-      status: 'pending',
-    },
-    include: {
-      candidate: true,
-    },
-  })
-
-  await sendInterviewLinkEmail({
-    to: updatedInvite.email,
-    role: updatedInvite.role,
-    interviewLink,
-    expiresAt: updatedInvite.tokenExpiry,
-    candidateName: updatedInvite.candidate?.fullName,
-  })
-
-  await prisma.interviewInvite.update({
-    where: { candidateId },
-    data: {
-      emailSentAt: new Date(),
-    },
-  })
+  const { invite: updatedInvite, interviewLink } = await resendInviteEmail(candidateId)
 
   res.status(200).json({
     success: true,

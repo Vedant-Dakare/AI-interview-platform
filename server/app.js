@@ -17,6 +17,7 @@ import { errorHandler, notFound } from './middleware/errorMiddleware.js'
 import prisma from './prisma/client.js'
 import { assertCloudinaryConfig } from './services/resumeStorageService.js'
 import { retryPendingInviteEmails } from './services/interviewInviteService.js'
+import { warmupOllama } from './services/ollamaService.js'
 import { configurePassport } from './config/passport.js'
 
 dotenv.config({ override: true })
@@ -120,6 +121,10 @@ async function bootstrap() {
 
     const server = app.listen(port, () => {
       console.log(`Server running on port ${port}`)
+
+      // Load the AI model into memory before the first candidate request so
+      // interviews never pay the cold-start cost. Fire-and-forget.
+      warmupOllama()
 
       if (inviteEmailRetryIntervalMs > 0) {
         runInviteEmailRetry()

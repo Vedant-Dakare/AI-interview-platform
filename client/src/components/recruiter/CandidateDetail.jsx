@@ -35,6 +35,7 @@ function CandidateDetail({ candidateId }) {
   const queryClient = useQueryClient()
   const [note, setNote] = useState('')
   const [showResumeModal, setShowResumeModal] = useState(false)
+  const [showReportModal, setShowReportModal] = useState(false)
 
   const { data, isLoading } = useQuery({
     queryKey: ['recruiter-candidate', candidateId],
@@ -44,8 +45,9 @@ function CandidateDetail({ candidateId }) {
   const detail = data?.data
   const candidate = detail?.candidate
   const scores = detail?.scores || {}
+  const reportSummary = detail?.reportSummary || null
   const interviewStatus = detail?.interview?.status || 'pending'
-  const primaryScore = toPercentScore(scores.overallScore)
+  const primaryScore = toPercentScore(reportSummary?.overallScore ?? scores.overallScore)
 
   const shortlistMutation = useMutation({
     mutationFn: () => shortlistRecruiterCandidate(candidateId),
@@ -76,6 +78,17 @@ function CandidateDetail({ candidateId }) {
   }, [detail])
 
   const insights = useMemo(() => {
+    if (reportSummary) {
+      return {
+        strengths: Array.isArray(reportSummary.strengths)
+          ? reportSummary.strengths.filter(Boolean).slice(0, 6)
+          : [],
+        weaknesses: Array.isArray(reportSummary.weaknesses)
+          ? reportSummary.weaknesses.filter(Boolean).slice(0, 6)
+          : [],
+      }
+    }
+
     const strengths = []
     const weaknesses = []
 
@@ -95,7 +108,7 @@ function CandidateDetail({ candidateId }) {
       strengths: unique(strengths),
       weaknesses: unique(weaknesses),
     }
-  }, [transcript])
+  }, [transcript, reportSummary])
 
   const focusTags = useMemo(() => {
     const tags = []
@@ -104,7 +117,7 @@ function CandidateDetail({ candidateId }) {
     }
     tags.push(...insights.strengths.slice(0, 3))
     return tags.slice(0, 4)
-  }, [candidate?.role, insights.strengths])
+  }, [candidate, insights.strengths])
 
   const resumeInsights = candidate?.resumeInsights
   const timeline = detail?.activities || []
@@ -216,42 +229,37 @@ function CandidateDetail({ candidateId }) {
               <div className="recruiter-panel recruiter-section-card">
                 <div className="recruiter-panel-header">
                   <h3>Performance Breakdown</h3>
-                  <a
+                  <button
+                    type="button"
                     className="btn-text"
-                    href={candidate?.resumeFileUrl || '#'}
-                    target={candidate?.resumeFileUrl ? '_blank' : undefined}
-                    rel={candidate?.resumeFileUrl ? 'noreferrer' : undefined}
-                    onClick={(event) => {
-                      if (!candidate?.resumeFileUrl) {
-                        event.preventDefault()
-                      }
-                    }}
+                    onClick={() => setShowReportModal(true)}
+                    disabled={!reportSummary && transcript.every((item) => !item.answer)}
                   >
                     Full report
-                  </a>
+                  </button>
                 </div>
 
                 <div className="review-metric-list">
                   <div className="review-metric-item">
                     <div>
-                      <h4>Architecture & System Design</h4>
-                      <p>Scalability, trade-offs, and production reliability decisions.</p>
+                      <h4>Technical Depth</h4>
+                      <p>Correctness and depth of technical reasoning in answers.</p>
                     </div>
-                    <strong>{toPercentScore(scores.technicalScore) ?? '--'}/100</strong>
+                    <strong>{toPercentScore(reportSummary?.technicalScore ?? scores.technicalScore) ?? '--'}/100</strong>
                   </div>
                   <div className="review-metric-item">
                     <div>
-                      <h4>Algorithmic Efficiency</h4>
-                      <p>Problem decomposition, optimization, and complexity awareness.</p>
+                      <h4>Problem Solving</h4>
+                      <p>Structure, trade-off awareness, and diagnostic approach.</p>
                     </div>
-                    <strong>{toPercentScore(scores.overallScore) ?? '--'}/100</strong>
+                    <strong>{toPercentScore(reportSummary?.problemSolvingScore ?? scores.overallScore) ?? '--'}/100</strong>
                   </div>
                   <div className="review-metric-item">
                     <div>
-                      <h4>Cultural Alignment</h4>
-                      <p>Communication quality and collaboration signals in interview responses.</p>
+                      <h4>Communication</h4>
+                      <p>Clarity, structure, and completeness of explanations.</p>
                     </div>
-                    <strong>{toPercentScore(scores.communicationScore) ?? '--'}/100</strong>
+                    <strong>{toPercentScore(reportSummary?.communicationScore ?? scores.communicationScore) ?? '--'}/100</strong>
                   </div>
                 </div>
               </div>
@@ -293,6 +301,19 @@ function CandidateDetail({ candidateId }) {
                         <div className="review-speaker-row answer">
                           <span className="review-time-chip">A{index + 1}</span>
                           <strong>{candidate?.fullName || 'Candidate'}</strong>
+                          {question.answer?.finalScore !== null && question.answer?.finalScore !== undefined && (
+                            <span
+                              className={`review-answer-score ${
+                                Number(question.answer.finalScore) >= 7
+                                  ? 'good'
+                                  : Number(question.answer.finalScore) < 5
+                                    ? 'weak'
+                                    : ''
+                              }`}
+                            >
+                              {Number(question.answer.finalScore).toFixed(1)}/10
+                            </span>
+                          )}
                         </div>
                         <p>{question.answer?.answerText || 'No answer recorded.'}</p>
                       </article>
@@ -407,6 +428,103 @@ function CandidateDetail({ candidateId }) {
             </aside>
           </div>
         </div>
+
+        {showReportModal && (
+          <div className="resume-modal-overlay" onClick={() => setShowReportModal(false)}>
+            <div className="resume-modal-content report-modal" onClick={(e) => e.stopPropagation()}>
+              <button
+                className="resume-modal-close"
+                onClick={() => setShowReportModal(false)}
+                type="button"
+                title="Close report"
+              >
+                ✕
+              </button>
+              <h2>AI Interview Report</h2>
+              <p className="report-subtitle">
+                {candidate?.fullName} · {candidate?.role?.toUpperCase() || 'Role pending'}
+              </p>
+
+              {reportSummary ? (
+                <>
+                  <div className="report-score-grid">
+                    <div>
+                      <span>Overall</span>
+                      <strong>{toPercentScore(reportSummary.overallScore) ?? '--'}/100</strong>
+                    </div>
+                    <div>
+                      <span>Technical</span>
+                      <strong>{toPercentScore(reportSummary.technicalScore) ?? '--'}/100</strong>
+                    </div>
+                    <div>
+                      <span>Communication</span>
+                      <strong>{toPercentScore(reportSummary.communicationScore) ?? '--'}/100</strong>
+                    </div>
+                    <div>
+                      <span>Problem Solving</span>
+                      <strong>{toPercentScore(reportSummary.problemSolvingScore) ?? '--'}/100</strong>
+                    </div>
+                    <div>
+                      <span>Integrity Risk</span>
+                      <strong>{toPercentScore(reportSummary.cheatingRiskScore) ?? '--'}/100</strong>
+                    </div>
+                  </div>
+
+                  {reportSummary.recommendation && (
+                    <div className={`report-recommendation ${String(reportSummary.recommendation).toLowerCase()}`}>
+                      Recommendation: <strong>{formatActionLabel(reportSummary.recommendation)}</strong>
+                    </div>
+                  )}
+
+                  <div className="insight-grid">
+                    <div>
+                      <span>Strengths</span>
+                      <ul>
+                        {insights.strengths.length
+                          ? insights.strengths.map((item) => <li key={item}>{item}</li>)
+                          : <li>Not captured.</li>}
+                      </ul>
+                    </div>
+                    <div>
+                      <span>Growth Areas</span>
+                      <ul>
+                        {insights.weaknesses.length
+                          ? insights.weaknesses.map((item) => <li key={item}>{item}</li>)
+                          : <li>Not captured.</li>}
+                      </ul>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <p className="recruiter-empty">
+                  Deterministic AI summary becomes available after an adaptive interview with evaluated answers.
+                </p>
+              )}
+
+              <h3>Question breakdown</h3>
+              <div className="report-question-list">
+                {transcript.filter((item) => item.answer).length ? (
+                  transcript
+                    .filter((item) => item.answer)
+                    .map((question, index) => (
+                      <article key={question.id} className="report-question-item">
+                        <header>
+                          <span>Q{index + 1}</span>
+                          {question.answer.finalScore !== null && question.answer.finalScore !== undefined && (
+                            <strong>{Number(question.answer.finalScore).toFixed(1)}/10</strong>
+                          )}
+                        </header>
+                        <p className="report-q-text">{question.questionText}</p>
+                        {question.answer.feedback && <p className="report-feedback">{question.answer.feedback}</p>}
+                      </article>
+                    ))
+                ) : (
+                  <p className="recruiter-empty">No answered questions yet.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {showResumeModal && candidate?.resumeFileUrl && (
           <div className="resume-modal-overlay" onClick={() => setShowResumeModal(false)}>

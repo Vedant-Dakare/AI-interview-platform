@@ -105,6 +105,66 @@ async function createInterviewInvite({
   }
 }
 
+async function resendInviteEmail(candidateId) {
+  const existingInvite = await prisma.interviewInvite.findUnique({
+    where: { candidateId },
+    include: {
+      candidate: true,
+    },
+  })
+
+  if (!existingInvite) {
+    const error = new Error('Candidate invite not found')
+    error.statusCode = 404
+    throw error
+  }
+
+  if (existingInvite.status === 'completed') {
+    const error = new Error('Interview already completed')
+    error.statusCode = 409
+    throw error
+  }
+
+  const newToken = generateInterviewToken()
+  const newTokenHash = hashInterviewToken(newToken)
+  const newExpiry = getTokenExpiry(24)
+  const interviewLink = buildInterviewLink(newToken)
+
+  const updatedInvite = await prisma.interviewInvite.update({
+    where: { candidateId },
+    data: {
+      interviewTokenHash: newTokenHash,
+      tokenExpiry: newExpiry,
+      emailSentAt: null,
+      status: 'pending',
+    },
+    include: {
+      candidate: true,
+    },
+  })
+
+  await sendInterviewLinkEmail({
+    to: updatedInvite.email,
+    role: updatedInvite.role,
+    interviewLink,
+    expiresAt: updatedInvite.tokenExpiry,
+    candidateName: updatedInvite.candidate?.fullName,
+  })
+
+  await prisma.interviewInvite.update({
+    where: { candidateId },
+    data: {
+      emailSentAt: new Date(),
+    },
+  })
+
+  return {
+    invite: updatedInvite,
+    interviewLink,
+    expiresAt: updatedInvite.tokenExpiry,
+  }
+}
+
 async function retryPendingInviteEmails({ limit = 25 } = {}) {
   const safeLimit = Number.isFinite(Number(limit)) && Number(limit) > 0 ? Number(limit) : 25
 
@@ -181,5 +241,6 @@ export {
   normalizeRole,
   buildQuestionPlan,
   createInterviewInvite,
+  resendInviteEmail,
   retryPendingInviteEmails,
 }

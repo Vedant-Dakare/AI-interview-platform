@@ -66,6 +66,10 @@ function parseInterviewId(interviewId) {
   return parsedId
 }
 
+function elapsedMs(startedAt) {
+  return Number((performance.now() - startedAt).toFixed(0))
+}
+
 function isInterviewRetakeAllowed() {
   const raw = process.env.ALLOW_INTERVIEW_RETAKE
 
@@ -272,7 +276,7 @@ const startInterview = asyncHandler(async (req, res) => {
 
     const memoryWithQuestion = applyQuestionToMemory(
       initialMemory,
-      adaptiveQuestion.question,
+      adaptiveQuestion,
       initialMemory.activeDomain,
       adaptiveQuestion.difficulty,
     )
@@ -436,6 +440,17 @@ const getInterviewById = asyncHandler(async (req, res) => {
   })
 })
 
+function findQuestionMeta(memory, questionText) {
+  const asked = Array.isArray(memory?.askedQuestions) ? memory.askedQuestions : []
+  const normalizedTarget = String(questionText || '').toLowerCase().trim()
+  return asked.find((entry) => {
+    const entryText = typeof entry === 'object' && entry !== null
+      ? String(entry.questionText || entry.question || '')
+      : String(entry || '')
+    return entryText.toLowerCase().trim() === normalizedTarget
+  }) || null
+}
+
 async function saveInterviewAnswer(interview, question, answerText) {
   const trimmedAnswer = answerText.trim()
 
@@ -474,14 +489,24 @@ async function saveInterviewAnswer(interview, question, answerText) {
 
     const currentDifficulty = difficultyHistory[difficultyHistory.length - 1] || 'medium'
     const currentTopic = topicHistory[topicHistory.length - 1] || 'core'
+    const currentQuestionMeta = findQuestionMeta(memory, question.questionText)
+    const expectedConcepts = Array.isArray(currentQuestionMeta?.expectedConcepts)
+      ? currentQuestionMeta.expectedConcepts
+      : []
 
+    const pipelineStartedAt = performance.now()
+    console.log(`[Interview] Answer received (interview=${interview.id}, question=${question.id}, chars=${trimmedAnswer.length})`)
+
+    const evaluationStartedAt = performance.now()
     const evaluation = await evaluateAdaptiveAnswer({
       questionText: question.questionText,
       candidateAnswerText: trimmedAnswer,
       resumeInsights,
       difficulty: currentDifficulty,
       topic: currentTopic,
+      expectedConcepts,
     })
+    console.log(`[Interview] Evaluation completed in ${elapsedMs(evaluationStartedAt)}ms (score=${evaluation.finalScore})`)
 
     const hasNextQuestion = interview.currentQuestionIndex < interview.targetQuestionCount - 1
     const nextQuestionIndex = hasNextQuestion ? interview.currentQuestionIndex + 1 : interview.currentQuestionIndex
@@ -494,6 +519,9 @@ async function saveInterviewAnswer(interview, question, answerText) {
       const nextDifficulty = evaluation.evaluationMeta?.nextDifficulty || 'medium'
       const activeDomain = updatedMemory?.activeDomain || memory?.activeDomain || 'backend'
 
+      const nextQuestionStartedAt = performance.now()
+      console.log(`[Interview] Next question generation started (domain=${activeDomain}, difficulty=${nextDifficulty})`)
+
       const nextQuestion = await generateAdaptiveQuestion({
         role: interview.role,
         resumeInsights,
@@ -502,14 +530,25 @@ async function saveInterviewAnswer(interview, question, answerText) {
         nextDifficulty,
       })
 
+      console.log(`[Interview] Next question generated in ${elapsedMs(nextQuestionStartedAt)}ms (total pipeline: ${elapsedMs(pipelineStartedAt)}ms)`)
+
       nextQuestionPayload = {
         questionText: nextQuestion.question,
         orderIndex: nextQuestionIndex,
+        topic: nextQuestion.topic,
+        difficulty: nextQuestion.difficulty,
+        questionType: nextQuestion.questionType,
       }
 
       updatedMemory = applyQuestionToMemory(
         updatedMemory,
-        nextQuestion.question,
+        {
+          questionText: nextQuestion.question,
+          topic: nextQuestion.topic,
+          difficulty: nextQuestion.difficulty,
+          questionType: nextQuestion.questionType,
+          expectedConcepts: nextQuestion.expectedConcepts,
+        },
         activeDomain,
         nextQuestion.difficulty,
       )
@@ -613,6 +652,13 @@ async function saveInterviewAnswer(interview, question, answerText) {
       savedAnswer: trimmedAnswer,
       nextQuestion: nextQuestionPayload?.questionText || null,
       nextQuestionId: createdNextQuestion?.id || null,
+      nextQuestionMeta: nextQuestionPayload
+        ? {
+            topic: nextQuestionPayload.topic,
+            difficulty: nextQuestionPayload.difficulty,
+            questionType: nextQuestionPayload.questionType,
+          }
+        : null,
       evaluationMeta: evaluation.evaluationMeta,
     }
   }
@@ -770,6 +816,7 @@ const submitAnswerByPayload = asyncHandler(async (req, res) => {
         ? result.nextQuestion || interview.questions[result.nextQuestionIndex]?.questionText || null
         : null,
       nextQuestionId: result.nextQuestionId || null,
+      nextQuestionMeta: result.nextQuestionMeta || null,
       similarityScore: result.similarityScore,
       llmScore: result.llmScore,
       finalScore: result.finalScore,
@@ -824,6 +871,7 @@ const submitAnswer = asyncHandler(async (req, res) => {
       question: question.questionText,
       nextQuestion: result.nextQuestion || null,
       nextQuestionId: result.nextQuestionId || null,
+      nextQuestionMeta: result.nextQuestionMeta || null,
       savedAnswer: result.savedAnswer,
       similarityScore: result.similarityScore,
       llmScore: result.llmScore,
@@ -921,41 +969,45 @@ const moveToNextQuestion = asyncHandler(async (req, res) => {
     return
   }
 
-  if (interview.interviewMode === 'adaptive') {
-    const nextIndex = interview.currentQuestionIndex + 1
-    const existingNext = interview.questions.find((item) => item.orderIndex === nextIndex)
+    if (interview.interviewMode === 'adaptive') {
+      const nextIndex = interview.currentQuestionIndex + 1
+      const existingNext = interview.questions.find((item) => item.orderIndex === nextIndex)
 
-    if (!existingNext) {
-      const memoryRecord = await getInterviewMemory(interview.id)
-      const resumeInsights = memoryRecord?.resumeInsights || {}
-      const memory = memoryRecord?.memory || {}
-      const activeDomain = memory?.activeDomain || 'backend'
-      const nextQuestion = await generateAdaptiveQuestion({
-        role: interview.role,
-        resumeInsights,
-        memory,
-        activeDomain,
-        nextDifficulty: 'medium',
-      })
+      if (!existingNext) {
+        const memoryRecord = await getInterviewMemory(interview.id)
+        const resumeInsights = memoryRecord?.resumeInsights || {}
+        const memory = memoryRecord?.memory || {}
+        const activeDomain = memory?.activeDomain || 'backend'
+        const summaries = Array.isArray(memory?.answerSummaries) ? memory.answerSummaries : []
+        const lastScore = Number(summaries[summaries.length - 1]?.score ?? 6)
+        const nextDifficulty = lastScore >= 7.5 ? 'hard' : lastScore >= 5 ? 'medium' : 'easy'
 
-      await prisma.$transaction(async (tx) => {
-        await tx.question.create({
-          data: {
-            interviewId: interview.id,
-            questionText: nextQuestion.question,
-            orderIndex: nextIndex,
-          },
+        const nextQuestion = await generateAdaptiveQuestion({
+          role: interview.role,
+          resumeInsights,
+          memory,
+          activeDomain,
+          nextDifficulty,
         })
 
-        await tx.interviewMemory.update({
-          where: { interviewId: interview.id },
-          data: {
-            memory: applyQuestionToMemory(memory, nextQuestion.question, activeDomain, nextQuestion.difficulty),
-          },
+        await prisma.$transaction(async (tx) => {
+          await tx.question.create({
+            data: {
+              interviewId: interview.id,
+              questionText: nextQuestion.question,
+              orderIndex: nextIndex,
+            },
+          })
+
+          await tx.interviewMemory.update({
+            where: { interviewId: interview.id },
+            data: {
+              memory: applyQuestionToMemory(memory, nextQuestion, activeDomain, nextQuestion.difficulty),
+            },
+          })
         })
-      })
+      }
     }
-  }
 
   const updatedInterview = await prisma.interview.update({
     where: {

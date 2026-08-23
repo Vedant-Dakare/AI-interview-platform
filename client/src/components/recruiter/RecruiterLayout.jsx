@@ -5,7 +5,7 @@ const NAV_ITEMS = [
   { key: 'dashboard', label: 'Overview', hash: '#/recruiter/dashboard', icon: 'space_dashboard' },
   { key: 'candidates', label: 'Candidates', hash: '#/recruiter/candidates', icon: 'group' },
   { key: 'analytics', label: 'Analytics', hash: '#/recruiter/analytics', icon: 'analytics' },
-  { key: 'jobs', label: 'Job Management', hash: '#/recruiter/jobs', icon: 'work' },
+  { key: 'jobs', label: 'Interviews', hash: '#/recruiter/jobs', icon: 'work' },
   { key: 'settings', label: 'Settings', hash: '#/recruiter/settings', icon: 'tune' },
 ]
 

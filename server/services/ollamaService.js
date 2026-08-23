@@ -4,6 +4,9 @@ const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.2:1b'
 const DEFAULT_TIMEOUT_MS = Number(process.env.OLLAMA_TIMEOUT_MS || 12000)
 const DEFAULT_MAX_RETRIES = Number(process.env.OLLAMA_MAX_RETRIES || 2)
+// Keeps the model resident in memory between requests so candidates never pay
+// the multi-second (often 30s+) model load cost mid-interview.
+const OLLAMA_KEEP_ALIVE = process.env.OLLAMA_KEEP_ALIVE || '30m'
 
 function clampPrompt(prompt, maxChars = 4000) {
   const normalized = String(prompt || '').trim()
@@ -14,7 +17,13 @@ function clampPrompt(prompt, maxChars = 4000) {
   return normalized.slice(0, maxChars)
 }
 
-async function callOllama({ prompt, timeoutMs = DEFAULT_TIMEOUT_MS, maxRetries = DEFAULT_MAX_RETRIES, options = {} }) {
+async function callOllama({
+  prompt,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  maxRetries = DEFAULT_MAX_RETRIES,
+  options = {},
+  format = null,
+}) {
   const safePrompt = clampPrompt(prompt)
   if (!safePrompt) {
     const error = new Error('Ollama prompt is required')
@@ -30,6 +39,18 @@ async function callOllama({ prompt, timeoutMs = DEFAULT_TIMEOUT_MS, maxRetries =
     ...options,
   }
 
+  const requestBody = {
+    model: OLLAMA_MODEL,
+    prompt: safePrompt,
+    stream: false,
+    keep_alive: OLLAMA_KEEP_ALIVE,
+    options: requestOptions,
+  }
+
+  if (format === 'json') {
+    requestBody.format = 'json'
+  }
+
   let lastError = null
 
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
@@ -42,12 +63,7 @@ async function callOllama({ prompt, timeoutMs = DEFAULT_TIMEOUT_MS, maxRetries =
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          model: OLLAMA_MODEL,
-          prompt: safePrompt,
-          stream: false,
-          options: requestOptions,
-        }),
+        body: JSON.stringify(requestBody),
         signal: controller.signal,
       })
 
@@ -55,7 +71,7 @@ async function callOllama({ prompt, timeoutMs = DEFAULT_TIMEOUT_MS, maxRetries =
 
       if (!response.ok) {
         const errorBody = await response.text().catch(() => '')
-        throw new Error(`Ollama request failed (${response.status}) ${errorBody}`)
+        throw new Error(`Ollama request failed (${response.status}) ${errorBody}`.slice(0, 300))
       }
 
       const data = await response.json().catch(() => ({}))
@@ -75,12 +91,15 @@ async function callOllama({ prompt, timeoutMs = DEFAULT_TIMEOUT_MS, maxRetries =
   }
 
   const failure = lastError instanceof Error ? lastError : new Error('Ollama request failed')
-  failure.statusCode = 502
+  if (failure.name === 'AbortError') {
+    failure.message = `AI service timed out after ${timeoutMs}ms`
+  }
+  failure.statusCode = failure.statusCode || 502
   throw failure
 }
 
-async function callOllamaJson({ prompt, timeoutMs, maxRetries, options }) {
-  const content = await callOllama({ prompt, timeoutMs, maxRetries, options })
+async function callOllamaJson({ prompt, timeoutMs, maxRetries, options, format }) {
+  const content = await callOllama({ prompt, timeoutMs, maxRetries, options, format })
   const parsed = extractJsonObject(content)
 
   if (!parsed) {
@@ -92,4 +111,38 @@ async function callOllamaJson({ prompt, timeoutMs, maxRetries, options }) {
   return parsed
 }
 
-export { callOllama, callOllamaJson, clampPrompt }
+let warmupPromise = null
+
+function isOllamaWarmupEnabled() {
+  const raw = String(process.env.OLLAMA_WARMUP_ON_BOOT ?? 'true').toLowerCase()
+  return !['0', 'false', 'no', 'off'].includes(raw)
+}
+
+async function warmupOllama() {
+  if (!isOllamaWarmupEnabled()) {
+    return false
+  }
+
+  if (!warmupPromise) {
+    warmupPromise = (async () => {
+      const startedAt = Date.now()
+      try {
+        await callOllama({
+          prompt: 'Reply with the single word: ready',
+          timeoutMs: Number(process.env.OLLAMA_WARMUP_TIMEOUT_MS || 90000),
+          maxRetries: 0,
+          options: { num_predict: 4 },
+        })
+        console.log(`[Ollama] Model ${OLLAMA_MODEL} warmed up in ${Date.now() - startedAt}ms`)
+        return true
+      } catch (error) {
+        console.warn(`[Ollama] Warmup failed (${error?.message || 'unknown error'}). AI features will load the model on first use.`)
+        return false
+      }
+    })()
+  }
+
+  return warmupPromise
+}
+
+export { callOllama, callOllamaJson, clampPrompt, warmupOllama }
