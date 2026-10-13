@@ -1,46 +1,7 @@
 import { buildEmbeddingVector, clampSimilarity, cosineSimilarity } from './embeddingService.js'
-import { callOpenAI, extractJsonObject, isOpenAIEnabled } from './openaiService.js'
-import { callOllamaJson, clampPrompt } from './ollamaService.js'
 
 function toFixedNumber(value, digits = 4) {
   return Number(Number(value || 0).toFixed(digits))
-}
-
-async function generateEmbedding(text) {
-  const normalizedText = String(text || '').trim()
-
-  if (!normalizedText) {
-    return []
-  }
-
-  if (!isOpenAIEnabled()) {
-    return buildEmbeddingVector(normalizedText)
-  }
-
-  try {
-    const model = process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small'
-    const response = await callOpenAI('/embeddings', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        input: normalizedText,
-      }),
-    })
-
-    const data = await response.json().catch(() => ({}))
-    const embedding = data?.data?.[0]?.embedding
-
-    if (!Array.isArray(embedding) || !embedding.length) {
-      return buildEmbeddingVector(normalizedText)
-    }
-
-    return embedding.map((value) => Number(value) || 0)
-  } catch {
-    return buildEmbeddingVector(normalizedText)
-  }
 }
 
 function clampScore(value, min = 0, max = 10) {
@@ -52,141 +13,8 @@ function clampScore(value, min = 0, max = 10) {
   return Number(Math.max(min, Math.min(max, numeric)).toFixed(2))
 }
 
-function normalizeStringArray(value) {
-  if (!Array.isArray(value)) {
-    return []
-  }
-
-  const seen = new Set()
-  return value
-    .map((item) => String(item || '').trim())
-    .filter((item) => item && !seen.has(item.toLowerCase()) && seen.add(item.toLowerCase()))
-}
-
-async function evaluateAdaptiveAnswer({
-  questionText,
-  candidateAnswerText,
-  resumeInsights,
-  difficulty,
-  topic,
-  expectedConcepts = [],
-}) {
-  const answerText = String(candidateAnswerText || '').trim()
-  const question = String(questionText || '').trim()
-
-  if (!answerText || !question) {
-    return {
-      answerEmbedding: [],
-      similarityScore: 0,
-      llmScore: 0,
-      finalScore: 0,
-      feedback: 'No answer captured.',
-      evaluationMeta: {
-        score: 0,
-        technicalScore: 0,
-        communicationScore: 0,
-        problemSolvingScore: 0,
-        confidenceScore: 0,
-        nextDifficulty: 'easy',
-        nextTopic: topic || 'core',
-        strengths: [],
-        weaknesses: ['No response was provided.'],
-      },
-      evaluationProvider: 'ollama',
-    }
-  }
-
-  const concepts = normalizeStringArray(expectedConcepts).slice(0, 6)
-  const conceptHint = concepts.length
-    ? `EXPECTED_CONCEPTS (a strong answer should touch most of these): ${concepts.join('; ')}`
-    : ''
-
-  // Compact profile - only fields that genuinely help calibrate scoring.
-  const resumeSummary = [
-    `level=${resumeInsights?.experienceLevel || 'junior'}`,
-    ...(resumeInsights?.skills?.length ? [`skills=${resumeInsights.skills.slice(0, 8).join('/')}`] : []),
-  ].join(', ')
-
-  const prompt = clampPrompt([
-    'You are a strict technical interview evaluator. Grade the candidate answer against the question.',
-    'Return JSON only with keys: score, technicalScore, communicationScore, problemSolvingScore, confidenceScore, strengths, weaknesses, feedback, nextDifficulty, nextTopic.',
-    'Rules: all scores 0-10 (decimals allowed); strengths/weaknesses are arrays of at most 2 short strings each; feedback is one actionable sentence; nextDifficulty must be easy|medium|hard based on this answer; nextTopic stays in the same domain as QUESTION.',
-    conceptHint,
-    '',
-    `CANDIDATE: ${resumeSummary}`,
-    `TOPIC: ${topic || 'core'}`,
-    `QUESTION_DIFFICULTY: ${difficulty || 'medium'}`,
-    `QUESTION: ${question.slice(0, 600)}`,
-    `ANSWER: ${answerText.slice(0, 2400)}`,
-  ].filter(Boolean).join('\n'), 4000)
-
-  // The LLM evaluation and embedding generation are independent - run them
-  // concurrently instead of paying two sequential round-trips.
-  let parsed = null
-  const evaluationPromise = callOllamaJson({
-    prompt,
-    format: 'json',
-    timeoutMs: Number(process.env.OLLAMA_EVAL_TIMEOUT_MS || 12000),
-    maxRetries: Number(process.env.OLLAMA_EVAL_RETRIES || 0),
-    options: {
-      temperature: Number(process.env.OLLAMA_EVAL_TEMPERATURE || 0.2),
-      num_predict: Number(process.env.OLLAMA_EVAL_NUM_PREDICT || 300),
-    },
-  }).then((result) => {
-    parsed = result
-  }).catch(() => {
-    parsed = null
-  })
-
-  const [answerEmbedding, referenceEmbedding] = await Promise.all([
-    generateEmbedding(answerText),
-    generateEmbedding(question),
-    evaluationPromise,
-  ])
-
-  const evaluation = parsed || {}
-  const lengthScore = Math.min(10, Math.max(2, Math.round(answerText.length / 80)))
-  const technicalScore = clampScore(evaluation.technicalScore ?? evaluation.score ?? lengthScore)
-  const communicationScore = clampScore(evaluation.communicationScore)
-  const problemSolvingScore = clampScore(evaluation.problemSolvingScore ?? lengthScore)
-  const confidenceScore = clampScore(evaluation.confidenceScore ?? 6)
-  const score = clampScore(evaluation.score ?? technicalScore)
-  const nextDifficulty = ['easy', 'medium', 'hard'].includes(String(evaluation.nextDifficulty || '').toLowerCase())
-    ? String(evaluation.nextDifficulty).toLowerCase()
-    : score >= 7.5
-      ? 'hard'
-      : score >= 5.5
-        ? 'medium'
-        : 'easy'
-  const nextTopic = String(evaluation.nextTopic || topic || 'core').trim()
-  const strengths = normalizeStringArray(evaluation.strengths)
-  const weaknesses = normalizeStringArray(evaluation.weaknesses)
-  const feedback = String(evaluation.feedback || '').trim() || 'Provide more structured reasoning and concrete examples.'
-
-  const similarityScore = clampSimilarity(cosineSimilarity(answerEmbedding, referenceEmbedding))
-  const finalScore = clampScore((technicalScore * 0.6) + (communicationScore * 0.2) + (problemSolvingScore * 0.2))
-
-  return {
-    answerEmbedding,
-    similarityScore,
-    llmScore: score,
-    finalScore,
-    feedback,
-    evaluationMeta: {
-      score,
-      technicalScore,
-      communicationScore,
-      problemSolvingScore,
-      confidenceScore,
-      nextDifficulty,
-      nextTopic,
-      strengths,
-      weaknesses,
-    },
-    evaluationProvider: 'ollama',
-  }
-}
-
+// Predefined-question mode: deterministic heuristic scoring only (no LLM).
+// Compares candidate answer against the predefined ideal answer.
 function evaluateByConceptCoverage(questionText, answerText, expectedConcepts = []) {
   const normalizedAnswer = String(answerText || '').toLowerCase()
   const normalizedQuestion = String(questionText || '').toLowerCase()
@@ -214,62 +42,6 @@ function evaluateByConceptCoverage(questionText, answerText, expectedConcepts = 
   }
 }
 
-async function evaluateWithLLM(questionText, answerText, expectedConcepts = []) {
-  if (!isOpenAIEnabled()) {
-    return evaluateByConceptCoverage(questionText, answerText, expectedConcepts)
-  }
-
-  try {
-    const model = process.env.OPENAI_EVAL_MODEL || 'gpt-4.1-mini'
-    const prompt = [
-      'Evaluate the candidate answer for correctness, depth, and clarity.',
-      'Return strict JSON only with keys: score, feedback.',
-      'score must be a number in range 0-10.',
-      'feedback must be a short 2-3 line string.',
-      '',
-      `Question: ${questionText}`,
-      `Expected Concepts: ${expectedConcepts.join(', ') || 'None provided'}`,
-      `Candidate Answer: ${answerText}`,
-    ].join('\n')
-
-    const response = await callOpenAI('/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0,
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a strict interview evaluator. Output JSON only.',
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-      }),
-    })
-
-    const data = await response.json().catch(() => ({}))
-    const content = data?.choices?.[0]?.message?.content || ''
-    const parsed = extractJsonObject(content) || {}
-    const score = Number(parsed.score)
-    const llmScore = Number.isFinite(score) ? Number(Math.max(0, Math.min(10, score)).toFixed(2)) : 0
-    const feedback = String(parsed.feedback || 'No feedback available').trim()
-
-    return {
-      llmScore,
-      feedback,
-      provider: 'openai',
-    }
-  } catch {
-    return evaluateByConceptCoverage(questionText, answerText, expectedConcepts)
-  }
-}
-
 function combineFinalScore(similarityScore, llmScore) {
   const finalScore = (Number(similarityScore) * 4) + (Number(llmScore) * 0.6)
   return Number(Math.max(0, Math.min(10, finalScore)).toFixed(2))
@@ -279,11 +51,9 @@ async function evaluateInterviewAnswer({ questionText, expectedAnswerText, expec
   const answerText = String(candidateAnswerText || '').trim()
   const referenceText = String(expectedAnswerText || questionText || '').trim()
 
-  const [answerEmbedding, referenceEmbedding, llmResult] = await Promise.all([
-    generateEmbedding(answerText),
-    generateEmbedding(referenceText),
-    evaluateWithLLM(questionText, answerText, expectedConcepts),
-  ])
+  const answerEmbedding = buildEmbeddingVector(answerText)
+  const referenceEmbedding = buildEmbeddingVector(referenceText)
+  const llmResult = evaluateByConceptCoverage(questionText, answerText, expectedConcepts)
 
   const similarityScore = clampSimilarity(cosineSimilarity(answerEmbedding, referenceEmbedding))
   const llmScore = toFixedNumber(llmResult.llmScore, 2)
@@ -333,174 +103,11 @@ function buildDeterministicSummary(answerRows) {
 }
 
 async function summarizeInterviewPerformance(answerRows) {
-  if (!isOpenAIEnabled()) {
-    return buildDeterministicSummary(answerRows)
-  }
-
-  try {
-    const model = process.env.OPENAI_REPORT_MODEL || process.env.OPENAI_EVAL_MODEL || 'gpt-4.1-mini'
-    const compactAnswers = answerRows.map((row) => ({
-      question: row?.question?.questionText || '',
-      answerText: row?.answerText || '',
-      finalScore: Number(row?.finalScore ?? row?.score ?? 0),
-      feedback: row?.feedback || '',
-    }))
-
-    const prompt = [
-      'Based on the following interview answers, return strict JSON with keys:',
-      'strengths (array of strings), weaknesses (array of strings), recommendation (SHORTLIST or REJECT).',
-      'Keep output concise and role-appropriate.',
-      '',
-      JSON.stringify(compactAnswers),
-    ].join('\n')
-
-    const response = await callOpenAI('/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0,
-        messages: [
-          {
-            role: 'system',
-            content: 'You generate structured interview summaries in JSON.',
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-      }),
-    })
-
-    const data = await response.json().catch(() => ({}))
-    const content = data?.choices?.[0]?.message?.content || ''
-    const parsed = extractJsonObject(content)
-
-    if (!parsed) {
-      return buildDeterministicSummary(answerRows)
-    }
-
-    const strengths = Array.isArray(parsed.strengths) ? parsed.strengths.map((value) => String(value || '').trim()).filter(Boolean) : []
-    const weaknesses = Array.isArray(parsed.weaknesses) ? parsed.weaknesses.map((value) => String(value || '').trim()).filter(Boolean) : []
-    const recommendationRaw = String(parsed.recommendation || '').trim().toUpperCase()
-
-    return {
-      strengths: strengths.length ? strengths : ['Consistent effort shown during interview.'],
-      weaknesses: weaknesses.length ? weaknesses : ['Provide deeper technical examples.'],
-      recommendation: recommendationRaw === 'SHORTLIST' ? 'SHORTLIST' : 'REJECT',
-      provider: 'openai',
-    }
-  } catch {
-    return buildDeterministicSummary(answerRows)
-  }
-}
-
-function buildAdaptiveSummary(answerRows) {
-  const totals = {
-    technical: 0,
-    communication: 0,
-    problemSolving: 0,
-    confidence: 0,
-    count: 0,
-  }
-  const strengths = []
-  const weaknesses = []
-
-  for (const row of answerRows) {
-    const meta = row?.evaluationMeta || {}
-    if (meta.technicalScore !== undefined) {
-      totals.technical += Number(meta.technicalScore || 0)
-      totals.communication += Number(meta.communicationScore || 0)
-      totals.problemSolving += Number(meta.problemSolvingScore || 0)
-      totals.confidence += Number(meta.confidenceScore || 0)
-      totals.count += 1
-    }
-
-    const rowStrengths = normalizeStringArray(meta.strengths)
-    const rowWeaknesses = normalizeStringArray(meta.weaknesses)
-    strengths.push(...rowStrengths)
-    weaknesses.push(...rowWeaknesses)
-  }
-
-  const avg = (value) => totals.count ? Number((value / totals.count).toFixed(2)) : 0
-  const technicalScore = avg(totals.technical)
-  const communicationScore = avg(totals.communication)
-  const problemSolvingScore = avg(totals.problemSolving)
-  const confidenceScore = avg(totals.confidence)
-  const overallScore = Number(((technicalScore * 0.5) + (communicationScore * 0.2) + (problemSolvingScore * 0.3)).toFixed(2))
-  const cheatingRiskScore = Number((10 - confidenceScore).toFixed(2))
-  const recommendation = overallScore >= 7 ? 'SHORTLIST' : 'REJECT'
-
-  return {
-    overallScore,
-    technicalScore,
-    communicationScore,
-    problemSolvingScore,
-    cheatingRiskScore,
-    strengths: normalizeStringArray(strengths).slice(0, 5),
-    weaknesses: normalizeStringArray(weaknesses).slice(0, 5),
-    recommendation,
-  }
-}
-
-async function summarizeAdaptiveInterviewPerformance(answerRows, resumeInsights) {
-  const fallback = buildAdaptiveSummary(answerRows)
-
-  const compact = answerRows.map((row) => ({
-    question: row?.question?.questionText || '',
-    score: row?.evaluationMeta?.score ?? row?.finalScore ?? row?.score ?? 0,
-    strengths: row?.evaluationMeta?.strengths || [],
-    weaknesses: row?.evaluationMeta?.weaknesses || [],
-    feedback: row?.feedback || '',
-  }))
-
-  const resumeSummary = {
-    skills: resumeInsights?.skills || [],
-    frameworks: resumeInsights?.frameworks || [],
-    projects: resumeInsights?.projects || [],
-    experienceLevel: resumeInsights?.experienceLevel || 'junior',
-  }
-
-  const prompt = clampPrompt([
-    'Summarize the adaptive interview results. Return JSON only with keys:',
-    'strengths (array of max 3 short strings), weaknesses (array of max 3 short strings), recommendation (SHORTLIST or REJECT), summary (under 4 sentences).',
-    '',
-    `ROLE_CONTEXT: ${JSON.stringify(resumeSummary)}`,
-    `ANSWERS: ${JSON.stringify(compact)}`,
-  ].join('\n'), 4000)
-
-  try {
-    const parsed = await callOllamaJson({
-      prompt,
-      format: 'json',
-      timeoutMs: Number(process.env.OLLAMA_SUMMARY_TIMEOUT_MS || 20000),
-      maxRetries: 0,
-      options: {
-        temperature: 0.2,
-        num_predict: Number(process.env.OLLAMA_SUMMARY_NUM_PREDICT || 320),
-      },
-    })
-    return {
-      ...fallback,
-      strengths: normalizeStringArray(parsed.strengths).slice(0, 5) || fallback.strengths,
-      weaknesses: normalizeStringArray(parsed.weaknesses).slice(0, 5) || fallback.weaknesses,
-      recommendation: String(parsed.recommendation || fallback.recommendation).toUpperCase() === 'SHORTLIST'
-        ? 'SHORTLIST'
-        : 'REJECT',
-      summary: String(parsed.summary || '').trim() || undefined,
-    }
-  } catch {
-    return fallback
-  }
+  return buildDeterministicSummary(answerRows)
 }
 
 export {
   evaluateInterviewAnswer,
-  evaluateAdaptiveAnswer,
   summarizeInterviewPerformance,
-  summarizeAdaptiveInterviewPerformance,
-  buildAdaptiveSummary,
+  buildDeterministicSummary,
 }

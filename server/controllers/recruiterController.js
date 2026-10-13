@@ -1,6 +1,5 @@
 import asyncHandler from '../middleware/asyncHandler.js'
 import prisma from '../prisma/client.js'
-import { buildAdaptiveSummary } from '../services/interviewEvaluationService.js'
 import { createInterviewInvite, resendInviteEmail } from '../services/interviewInviteService.js'
 import { sendRejectionEmail, sendShortlistEmail } from '../services/emailService.js'
 
@@ -232,17 +231,16 @@ const getCandidateDetail = asyncHandler(async (req, res) => {
   const scoreSummary = normalizeInterviewScores(answerRows)
 
   let reportSummary = null
-  if (interview && answerRows.length && interview.interviewMode === 'adaptive') {
-    const summary = buildAdaptiveSummary(answerRows)
+  if (interview && answerRows.length) {
     reportSummary = {
-      overallScore: summary.overallScore,
-      technicalScore: summary.technicalScore,
-      communicationScore: summary.communicationScore,
-      problemSolvingScore: summary.problemSolvingScore,
-      cheatingRiskScore: summary.cheatingRiskScore,
-      strengths: summary.strengths,
-      weaknesses: summary.weaknesses,
-      recommendation: summary.recommendation,
+      overallScore: scoreSummary.overallScore,
+      technicalScore: scoreSummary.technicalScore,
+      communicationScore: scoreSummary.communicationScore,
+      problemSolvingScore: null,
+      cheatingRiskScore: null,
+      strengths: [],
+      weaknesses: [],
+      recommendation: (scoreSummary.overallScore ?? 0) >= 7 ? 'SHORTLIST' : 'REJECT',
     }
   }
 

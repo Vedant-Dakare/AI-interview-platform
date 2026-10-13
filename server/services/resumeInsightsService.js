@@ -1,5 +1,5 @@
-import { callOllamaJson, clampPrompt } from './ollamaService.js'
-
+// Predefined-question mode: resume insights are extracted heuristically (no LLM).
+// Used only for record-keeping / recruiter display, NOT for question generation.
 const MAX_RESUME_CHARS = Number(process.env.RESUME_MAX_CHARS || 3500)
 
 const KNOWN_SKILLS = [
@@ -73,25 +73,7 @@ async function extractResumeInsights(resumeText) {
   }
 
   const trimmed = normalized.slice(0, MAX_RESUME_CHARS)
-  const prompt = clampPrompt([
-    'Extract resume insights as strict JSON with keys:',
-    'skills, technologies, frameworks, languages, projects, domains, experienceLevel, yearsExperience, highlights.',
-    'experienceLevel must be one of: junior, mid, senior, lead.',
-    'Return JSON only. Keep arrays short (max 8 items).',
-    '',
-    `RESUME_TEXT: ${trimmed}`,
-  ].join('\n'), 4000)
-
-  try {
-    const parsed = await callOllamaJson({
-      prompt,
-      timeoutMs: Number(process.env.OLLAMA_RESUME_TIMEOUT_MS || 5000),
-      maxRetries: Number(process.env.OLLAMA_RESUME_RETRIES || 0),
-    })
-    return sanitizeInsights(parsed)
-  } catch {
-    return fallbackInsights(trimmed)
-  }
+  return fallbackInsights(trimmed)
 }
 
 export { extractResumeInsights, buildEmptyInsights, sanitizeInsights }
